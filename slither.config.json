@@ -1,0 +1,10 @@
+{
+    "compile_force_framework": "hardhat",
+    "hardhat_ignore_compile": true,
+    "hardhat_artifacts_directory": "artifacts",
+    "solc_solcs_select": "0.8.23",
+    "exclude_informational": false,
+    "exclude_low": false,
+    "exclude_medium": false,
+    "filter_paths": "(mock/|test/|vendor0.8/)"
+}

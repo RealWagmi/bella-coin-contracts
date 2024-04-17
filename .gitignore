@@ -1,0 +1,19 @@
+node_modules
+.env
+.vscode
+.mocharc.json
+coverage
+coverage.json
+typechain
+typechain-types
+useful-background-papers
+info.txt
+# Hardhat files
+cache
+forge-cache
+forge-artifacts
+artifacts
+#contracts-exposed
+contracts-dbg
+artifacts-dbg
+dbg.project.json
