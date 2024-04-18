@@ -49,8 +49,7 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     IUniswapV3Pool public bellaV3Pool;
     /// @notice Wrapped native token on current network
     address public immutable wrappedNativeToken;
-
-    uint256 public immutable nativeTokenDecimals;
+    uint256 public immutable oneNativeToken;
     /// @notice Timestamp when the geme ower
     uint256 public endTime;
     uint256 uniPosTokenId;
@@ -61,9 +60,9 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     // function.
     uint32 callbackGasLimit = 200000;
     /// @notice Initial rate of tokens per wrappedNativeToken
-    uint256 initialTokenRate;
-    string public name;
-    string public symbol;
+    uint256 public initialTokenRate;
+    string public constant name = "Bella Dice Game";
+    string public symbol = "BellaPoints";
     // The total supply of points in existence
     uint256 public totalSupply;
     uint256 public lastgameId;
@@ -86,7 +85,7 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
         require(liquidityVaultAddress != address(0), "liquidityVaultAddress zero");
         bellaLiquidityVaultAddress = liquidityVaultAddress;
         wrappedNativeToken = wrappedNativeTokenAddress;
-        nativeTokenDecimals = IERC20Metadata(wrappedNativeTokenAddress).decimals();
+        oneNativeToken = 10 ** IERC20Metadata(wrappedNativeTokenAddress).decimals();
         positionManager = INonfungiblePositionManager(positionManagerAddress);
         factory = IUniswapV3Factory(factoryAddress);
     }
@@ -209,7 +208,7 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     /// @return Whether the current time is before the game's end time (`true`) or after (`false`)
     function gameNotOver() public view returns (bool) {
         uint256 _endTime = endTime;
-        require(_endTime > 0, "game haven't started yet");
+        require(_endTime > 0, "game not started yet");
         return block.timestamp < _endTime;
     }
 
@@ -223,7 +222,7 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
      */
     function gameOver() public view returns (bool) {
         uint256 _endTime = endTime;
-        require(_endTime > 0, "game haven't started yet");
+        require(_endTime > 0, "game not started yet");
         return block.timestamp > _endTime + 10 minutes;
     }
 
@@ -235,7 +234,7 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     function calculatePointsAmount(
         uint256 paymentAmount
     ) public view returns (uint256 purchaseAmount) {
-        purchaseAmount = (paymentAmount * initialTokenRate) / nativeTokenDecimals;
+        purchaseAmount = (paymentAmount * initialTokenRate) / oneNativeToken;
     }
 
     /**
@@ -247,7 +246,7 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
         uint256 desiredPointsAmount
     ) public view returns (uint256 paymentAmount) {
         uint256 _initialTokenRate = initialTokenRate;
-        uint256 intermediate = (desiredPointsAmount * nativeTokenDecimals);
+        uint256 intermediate = (desiredPointsAmount * oneNativeToken);
         paymentAmount = intermediate / _initialTokenRate;
         //round up
         if (paymentAmount == 0 || intermediate % _initialTokenRate > 0) {
@@ -459,7 +458,7 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
      * @notice Allows users to purchase a specified amount of bella points.
      * @param desiredAmountOut The exact amount of bella points the user wants to purchase.
      */
-    function purchasePoints(uint256 desiredAmountOut) external payable shouldGameIsNotOver {
+    function purchasePoints(uint256 desiredAmountOut) external shouldGameIsNotOver {
         _mintPoints(msg.sender, desiredAmountOut);
         uint256 paymentAmount = calculatePaymentAmount(desiredAmountOut);
         wrappedNativeToken.safeTransferFrom(msg.sender, address(this), paymentAmount);

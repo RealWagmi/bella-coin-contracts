@@ -79,10 +79,10 @@ const config: HardhatUserConfig = {
   },
   networks: {
     hardhat: {
-      chainId: 1088,// METIS
+      chainId: 1,
       forking: {
-        url: 'https://andromeda.metis.io/?owner=1088',
-        blockNumber: 16382454,
+        url: 'https://rpc.ankr.com/eth',
+        blockNumber: 19682200,
       },
       allowUnlimitedContractSize: false,
       allowBlocksWithSameTimestamp: true,
