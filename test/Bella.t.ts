@@ -25,6 +25,7 @@ import { Console } from "console";
 describe("Bella Dice Game", function () {
     const LinkTokenAddress = "0x514910771AF9Ca656af840dff83E8264EcF986CA";
     const VRFCoordinator = "0x271682DEB8C4E0901D1a1550aD2e64D568E69909";
+    const VRFWrapper = "0x5A861794B927983406fCE1D062e00b9368d97Df6";
     const WETH_ADDRESS = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
     const UNDERLYING_POSITION_MANAGER_ADDRESS = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88";
     const UNISWAP_V3_FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
@@ -34,6 +35,8 @@ describe("Bella Dice Game", function () {
     let alice: HardhatEthersSigner;
     let bob: HardhatEthersSigner;
     let startGameSnapshot: SnapshotRestorer;
+    let purchasePointsSnapshot: SnapshotRestorer;
+    let betSnapshot: SnapshotRestorer;
     let bella: Bella;
     let weth9: IWETH;
     let vault: BellaLiquidityVault;
@@ -73,10 +76,10 @@ describe("Bella Dice Game", function () {
         linkToken = await ethers.getContractAt("IERC20", LinkTokenAddress);
 
         const BellaLiquidityVaultFactory = await ethers.getContractFactory("BellaLiquidityVault");
-        vault = (await BellaLiquidityVaultFactory.deploy(LinkTokenAddress, VRFCoordinator)) as BellaLiquidityVault;
+        vault = (await BellaLiquidityVaultFactory.deploy(LinkTokenAddress, VRFWrapper)) as BellaLiquidityVault;
 
         const BellaDiceGameFactory = await ethers.getContractFactory("BellaDiceGame");
-        game = (await BellaDiceGameFactory.deploy(LinkTokenAddress, VRFCoordinator, WETH_ADDRESS, await vault.getAddress(), UNDERLYING_POSITION_MANAGER_ADDRESS, UNISWAP_V3_FACTORY)) as BellaDiceGame;
+        game = (await BellaDiceGameFactory.deploy(LinkTokenAddress, VRFWrapper, WETH_ADDRESS, await vault.getAddress(), UNDERLYING_POSITION_MANAGER_ADDRESS, UNISWAP_V3_FACTORY)) as BellaDiceGame;
 
         await getTokens(
             DONOR_LINK_ADDRESS,
@@ -226,6 +229,7 @@ describe("Bella Dice Game", function () {
 
             const newWethBalance = await weth9.balanceOf(await game.getAddress());
             expect(newWethBalance).to.equal(paymentAmount + wethBalance);
+            purchasePointsSnapshot = await takeSnapshot();
         });
 
         it("should revert if the purchase amount is zero", async function () {
@@ -233,5 +237,181 @@ describe("Bella Dice Game", function () {
         });
     });
 
+    describe("Emergency withdraw", function () {
+        it("Should not allow withdrawal if the max waiting time has not passed", async function () {
+            await expect(game.connect(alice).emergencyWithdraw())
+                .to.be.revertedWith("forbidden");
+        });
+
+        it("Should not allow withdrawal if the user balance is zero", async function () {
+            const correctTime = await game.endTime() + await game.maxWaitingTime() + 1n;
+            await mineUpTo(correctTime);
+            // Ensuring that user has no balances
+            expect(await game.balanceOf(owner.address)).to.equal(0);
+            await expect(game.connect(owner).emergencyWithdraw())
+                .to.be.revertedWith("zero balance");
+        });
+
+        it("Should allow withdrawal after the max waiting time and burn the user's points", async function () {
+            const totalSupplyBefore = await game.totalSupply();
+            const wethBalanceBefore = await weth9.balanceOf(await game.getAddress());
+            const userBalanceWethBefore = await weth9.balanceOf(alice.address);
+            const userBalance = await game.balanceOf(alice.address);
+
+            await expect(game.connect(alice).emergencyWithdraw())
+                .to.emit(game, "EmergencyWithdraw")
+                .withArgs(alice.address, userBalance, ethers.parseEther("1"));
+
+            // Check that the user's points were burned and total supply decreased
+            const totalSupplyAfter = await game.totalSupply();
+            expect(totalSupplyAfter).to.equal(totalSupplyBefore - userBalance);
+            const wethBalanceAfter = await weth9.balanceOf(await game.getAddress());
+            expect(wethBalanceAfter).to.equal(wethBalanceBefore - ethers.parseEther("1"));
+            const userBalanceWethAfter = await weth9.balanceOf(alice.address);
+            expect(userBalanceWethAfter).to.equal(userBalanceWethBefore + ethers.parseEther("1"));
+
+        });
+    });
+
+    describe('bet', function () {
+
+        it('should fail if bet amounts are invalid', async function () {
+            await purchasePointsSnapshot.restore();
+            let invalidBetAmounts = [0]; // Zero bet amount, which is invalid
+            // Attempt to place a bet with invalid bet amounts and expect failure
+            await expect(game.connect(alice).bet(invalidBetAmounts))
+                .to.be.revertedWith("zero amount");
+
+            invalidBetAmounts = [1, 1, 1, 1]; // Zero bet amount, which is invalid
+            // Attempt to place a bet with invalid bet amounts and expect failure
+            await expect(game.connect(alice).bet(invalidBetAmounts))
+                .to.be.revertedWith("invalid betAmts");
+        });
+
+        it('should fail if user does not have enough points', async function () {
+            const betAmts = [ethers.parseEther("10"), ethers.parseEther("10"), ethers.parseEther("10")];
+            // Attempt to place a bet and expect failure due to insufficient points
+            await expect(game.connect(alice).bet(betAmts))
+                .to.be.revertedWith("points are not enough");
+        });
+
+        it('should revert if there is not enough LINK to fulfill the VRF request', async function () {
+            await game.withdrawLink();
+            const betAmts = [ethers.parseEther("1"), ethers.parseEther("1"), ethers.parseEther("1")];
+            // Attempt to place a bet and expect failure due to not enough LINK
+            await expect(game.connect(alice).bet(betAmts))
+                .to.be.reverted;
+            // Replenish the LINK balance
+            linkToken.connect(owner).transfer(await game.getAddress(), ethers.parseUnits("5", 18));
+        });
+
+        it('should allow a user to place a bet (3 dice) when conditions are met', async function () {
+
+            const totalSupplyBefore = await game.totalSupply();
+            const wethBalanceBefore = await weth9.balanceOf(await game.getAddress());
+            const userBalanceWethBefore = await weth9.balanceOf(alice.address);
+            const userBalanceBefore = await game.balanceOf(alice.address);
+            const betAmts = [ethers.parseEther("1"), ethers.parseEther("2"), ethers.parseEther("3")];
+            const bet = await game.connect(alice).bet(betAmts);
+            await expect(bet).to.emit(game, "Bet").withArgs(anyValue, alice.address, ethers.parseEther("6"));
+
+            const totalSupplyAfter = await game.totalSupply();
+            expect(totalSupplyAfter).to.equal(totalSupplyBefore - ethers.parseEther("6"));
+            const wethBalanceAfter = await weth9.balanceOf(await game.getAddress());
+            expect(wethBalanceAfter).to.equal(wethBalanceBefore);
+            const userBalanceWethAfter = await weth9.balanceOf(alice.address);
+            expect(userBalanceWethAfter).to.equal(userBalanceWethBefore);
+            const userBalanceAfter = await game.balanceOf(alice.address);
+            expect(userBalanceAfter).to.equal(userBalanceBefore - ethers.parseEther("6"));
+
+        });
+
+        it('should allow a user to place a bet (2 dice) when conditions are met', async function () {
+
+            const totalSupplyBefore = await game.totalSupply();
+            const wethBalanceBefore = await weth9.balanceOf(await game.getAddress());
+            const userBalanceWethBefore = await weth9.balanceOf(bob.address);
+            const userBalanceBefore = await game.balanceOf(bob.address);
+            const betAmts = [ethers.parseEther("2"), ethers.parseEther("3")];
+            const bet = await game.connect(bob).bet(betAmts);
+            await expect(bet).to.emit(game, "Bet").withArgs(anyValue, bob.address, ethers.parseEther("5"));
+
+            const totalSupplyAfter = await game.totalSupply();
+            expect(totalSupplyAfter).to.equal(totalSupplyBefore - ethers.parseEther("5"));
+            const wethBalanceAfter = await weth9.balanceOf(await game.getAddress());
+            expect(wethBalanceAfter).to.equal(wethBalanceBefore);
+            const userBalanceWethAfter = await weth9.balanceOf(bob.address);
+            expect(userBalanceWethAfter).to.equal(userBalanceWethBefore);
+            const userBalanceAfter = await game.balanceOf(bob.address);
+            expect(userBalanceAfter).to.equal(userBalanceBefore - ethers.parseEther("5"));
+        });
+
+        it('should fail if the last game round is not fulfilled', async function () {
+            const betAmts = [ethers.parseEther("1"), ethers.parseEther("1"), ethers.parseEther("1")];
+            await expect(game.connect(bob).bet(betAmts)).to.be.revertedWith("last round not fulfilled");
+        });
+
+        describe('Emergency fulFilled last bet', function () {
+
+            it('Should only be callable by the contract owner', async function () {
+                // Attempt to fulfill last bet by someone who is not the owner and expect failure
+                await expect(game.connect(alice).emergencyFulFilledLastBet(bob.address))
+                    .to.be.revertedWith("Ownable: caller is not the owner");
+            });
+
+            it('Should revert if there are no rounds for the user', async function () {
+                // Calling the emergency fulfill on a user with no rounds should fail
+                await expect(game.emergencyFulFilledLastBet(owner.address))
+                    .to.be.revertedWith("round not found");
+            });
+
+            it('Should mark the last round as fulfilled, mint points, reset total bet, and emit an event', async function () {
+                // Arrange
+                const totalSupplyBefore = await game.totalSupply();
+                const wethBalanceBefore = await weth9.balanceOf(await game.getAddress());
+                const userBalanceWethBefore = await weth9.balanceOf(bob.address);
+                const userBalanceBefore = await game.balanceOf(bob.address);
+
+                // Act
+                const tx = await game.emergencyFulFilledLastBet(bob.address);
+
+                // Assert
+                await expect(tx)
+                    .to.emit(game, "EmergencyFulFilledLastBet")
+                    .withArgs(bob.address, anyValue);
+
+                const totalSupplyAfter = await game.totalSupply();
+                expect(totalSupplyAfter).to.equal(totalSupplyBefore + ethers.parseEther("5"));
+                const wethBalanceAfter = await weth9.balanceOf(await game.getAddress());
+                expect(wethBalanceAfter).to.equal(wethBalanceBefore);
+                const userBalanceWethAfter = await weth9.balanceOf(bob.address);
+                expect(userBalanceWethAfter).to.equal(userBalanceWethBefore);
+                const userBalanceAfter = await game.balanceOf(bob.address);
+                expect(userBalanceAfter).to.equal(userBalanceBefore + ethers.parseEther("5"));
+            });
+
+            it('should allow a user to place a bet (1 dice) after emergencyFulFilledLastBet', async function () {
+                const totalSupplyBefore = await game.totalSupply();
+                const wethBalanceBefore = await weth9.balanceOf(await game.getAddress());
+                const userBalanceWethBefore = await weth9.balanceOf(bob.address);
+                const userBalanceBefore = await game.balanceOf(bob.address);
+                const betAmts = [ethers.parseEther("5")];
+                const bet = await game.connect(bob).bet(betAmts);
+                await expect(bet).to.emit(game, "Bet").withArgs(anyValue, bob.address, ethers.parseEther("5"));
+
+                const totalSupplyAfter = await game.totalSupply();
+                expect(totalSupplyAfter).to.equal(totalSupplyBefore - ethers.parseEther("5"));
+                const wethBalanceAfter = await weth9.balanceOf(await game.getAddress());
+                expect(wethBalanceAfter).to.equal(wethBalanceBefore);
+                const userBalanceWethAfter = await weth9.balanceOf(bob.address);
+                expect(userBalanceWethAfter).to.equal(userBalanceWethBefore);
+                const userBalanceAfter = await game.balanceOf(bob.address);
+                expect(userBalanceAfter).to.equal(userBalanceBefore - ethers.parseEther("5"));
+                betSnapshot = await takeSnapshot();
+            });
+
+        });
+
+    });
 
 });

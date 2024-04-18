@@ -17,6 +17,8 @@ import { LiquidityAmounts, FullMath } from "./vendor0.8/uniswap/LiquidityAmounts
 import { AmountsLiquidity } from "./libraries/AmountsLiquidity.sol";
 import { TransferHelper } from "./libraries/TransferHelper.sol";
 
+// import "hardhat/console.sol";
+
 contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     using TransferHelper for address;
     using EnumerableSet for EnumerableSet.UintSet;
@@ -99,6 +101,7 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     event BellaDeployed(address bellaToken, address bellaV3Pool);
     event DistributeLiquidity(uint256 tokenId);
     event EmergencyWithdraw(address user, uint256 pointsAmount, uint256 withdrawAmt);
+    event EmergencyFulFilledLastBet(address user, uint256 gameId);
 
     error NotEnoughLINK(uint256 balanceLink, uint256 requiredAmt);
 
@@ -161,6 +164,26 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
         initialTokenRate = _initialTokenRate;
         endTime = block.timestamp + GAME_PERIOD;
         emit StartGame(_initialTokenRate);
+    }
+
+    /**
+     * @notice Fulfill the last bet of a user in case of an emergency. This action can only be taken by the contract owner.
+     *         It sets the `fulfilled` flag to true, mints points to the user equivalent to their total bet, and then resets the total bet.
+     * @dev This function finds the last game information for the user, checks whether the round exists and if it's unfulfilled,
+     *      marks it as fulfilled, mints points, and sets the total bet to zero.
+     *      Emits the {EmergencyFulFilledLastBet} event upon completion.
+     *      The function requires that the user has at least one unfulfilled game round and that the caller is the contract owner.
+     * @param user The address of the user whose last bet needs to be emergency fulfilled.
+     */
+    function emergencyFulFilledLastBet(address user) external onlyOwner {
+        (uint256 id, GameRound memory mRound) = getUserLastGameInfo(user);
+        require(mRound.user != address(0), "round not found");
+        require(mRound.fulfilled == false, "forbidden");
+        GameRound storage round = gameRounds[id];
+        round.fulfilled = true;
+        _mintPoints(user, round.totalBet);
+        round.totalBet = 0;
+        emit EmergencyFulFilledLastBet(user, id);
     }
 
     /// @notice Retrieves the balance of a given account
