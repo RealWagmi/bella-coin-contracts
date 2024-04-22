@@ -39,8 +39,8 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     uint256 public constant maxWaitingTime = 7 days;
     // Cannot exceed VRFV2Wrapper.getConfig().maxNumWords.
     uint256 public constant MAX_NUM_WORDS = 3;
-    // The default is 3, but you can set this higher.
-    uint16 public constant requestConfirmations = 3;
+
+    uint16 public constant requestConfirmations = 10;
     uint24 public constant bellaPoolV3feeTiers = 10000;
     int24 public constant bellaPoolV3TickSpacing = 200;
 
@@ -51,10 +51,11 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     IUniswapV3Pool public bellaV3Pool;
     /// @notice Wrapped native token on current network
     address public immutable wrappedNativeToken;
+    uint160 public fixedSqrtPrice;
     uint256 public immutable oneNativeToken;
     /// @notice Timestamp when the geme ower
     uint256 public endTime;
-    uint256 uniPosTokenId;
+    uint256 public uniPosTokenId;
 
     // Test and adjust
     // this limit based on the network that you select, the size of the request,
@@ -68,7 +69,6 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     // The total supply of points in existence
     uint256 public totalSupply;
     uint256 public lastgameId;
-    uint256 public delpoyRequestId;
     // Maps an address to their current balance
     mapping(address => uint256) private userBalances;
     // Maps a game ID to its round information
@@ -116,6 +116,12 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
         _;
     }
 
+    /// @dev Modifier to check if the current block timestamp is before or equal to the deadline.
+    modifier checkDeadline(uint256 deadline) {
+        require(_blockTimestamp() <= deadline, "too old transaction");
+        _;
+    }
+
     /**
      * @notice Allows the sending of Ether to the contract to purchase tokens automatically at the current rate.
      * @dev When Ether is sent to the contract, it calculates the token amount, and wraps the Ether into weth9.
@@ -153,8 +159,12 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
      * or if the BellaVault is not owned by this contract.
      *
      * @param _initialTokenRate The exchange rate at which the game starts, specified in desired tokens per unit of payment token.
+     * @param deadline A timestamp indicating the deadline by which the game must start.
      */
-    function startGame(uint256 _initialTokenRate) external onlyOwner {
+    function startGame(
+        uint256 _initialTokenRate,
+        uint256 deadline
+    ) external onlyOwner checkDeadline(deadline) {
         require(initialTokenRate == 0 && _initialTokenRate > 0, "only once");
         require(
             IBellaVault(bellaLiquidityVaultAddress).owner() == address(this),
@@ -277,6 +287,41 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
         }
     }
 
+    /// This can be used to predict the address before deployment.
+    /// @param deployer The address of the account that would deploy the Bella token.
+    /// @return The anticipated Ethereum address of the to-be-deployed Bella token.
+    function computeBellaAddress(address deployer) public view returns (address) {
+        bytes32 salt = keccak256(abi.encode(deployer));
+        bytes memory bytecode = type(Bella).creationCode;
+        bytes32 initCode = keccak256(
+            abi.encodePacked(bytecode, abi.encode("Bella", "Bella", decimals))
+        );
+        return
+            address(
+                uint160(
+                    uint256(
+                        keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCode))
+                    )
+                )
+            );
+    }
+
+    /**
+     * @notice Calculates the square root of the price between Bella tokens and Wrapped Native Tokens
+     *
+     * @return sqrtPriceX96 The square root of the calculated price.
+     */
+    function calculateSqrtPriceX96() public view returns (uint160 sqrtPriceX96) {
+        bool zeroForBella = address(bellaToken) < wrappedNativeToken;
+        uint256 halfBella = totalSupply / 2;
+        uint256 halfNativeToken = wrappedNativeToken.getBalance() / 2;
+
+        uint256 sqrtPrice = zeroForBella
+            ? uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, halfNativeToken, halfBella)))
+            : uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, halfBella, halfNativeToken)));
+        sqrtPriceX96 = sqrtPrice.toUint160();
+    }
+
     /// @notice This function allows a user to place a bet if the current game is not over.
     /// @dev Emits the `Bet` event upon successful execution of the function, burns points from the sender's balance,
     /// calculates the required LINK for the VRF request, and sets up the new game round.
@@ -326,40 +371,65 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
         emit Bet(gameId, msg.sender, totalBetAmt);
     }
 
-    /**
-     * @notice Deploys the Bella token once the game is over.
-     * @dev This function deploys the Bella token by requesting randomness from Chainlink's VRF (Verifiable Random Function)
-     * and transferring the required amount of LINK tokens for the VRF request. It ensures that the deployment happens only once
-     * by requiring that the `bellaToken` address is not already set. The `shouldGameIsOver` modifier ensures that the contract's state
-     * allows for the Bella token to be deployed, typically after the game has concluded.
-     *
-     * Reverts if the bellaToken has been set prior to this call meaning the Bella token has already been deployed.
-     * Note: The LINK token must be approved by the caller to cover the fee for the randomness request.
-     *
-     * @param gasLimit The maximum gas price allowed for the callback of the randomness request.
-     */
-    function deployBalla(uint32 gasLimit) external shouldGameIsOver {
+    /// @notice Deploys Bella token and sets up a corresponding V3 pool.
+    /// Can only be called once after the game has ended and if the Bella token has not been set yet.
+    /// @dev This function deploys a new Bella ERC20 token using 'CREATE2' for deterministic addresses,
+    /// then checks if a Uniswap V3 pool with the token exists. If not, it creates one. If a pool does
+    /// exist but its price is incorrect, the function sets fixedSqrtPrice and aborts deployment to
+    /// prevent DOS attacks by preemptive pool creation.
+    /// Emits a `BellaDeployed` event upon successful deployment.
+    /// @custom:modifier shouldGameIsOver Ensures that this function can only be called after the game is over.
+    /// @custom:require "bellaToken already set" Only allows the bellaToken to be deployed once.
+    function deployBella() external shouldGameIsOver {
         require(address(bellaToken) == address(0), "bellaToken already set");
-        // https://docs.chain.link/vrf/v2/estimating-costs
-        uint256 requiredAmt = VRF_V2_WRAPPER.calculateRequestPrice(callbackGasLimit);
-        // need to approve LINK token
-        address(LINK).safeTransferFrom(msg.sender, address(this), requiredAmt);
-        delpoyRequestId = requestRandomness(gasLimit, requestConfirmations, 1);
+        address _wrappedNativeToken = wrappedNativeToken;
+        uint24 _bellaPoolV3feeTiers = bellaPoolV3feeTiers;
+
+        address _bellaToken = computeBellaAddress(msg.sender);
+        address _bellaV3Pool = factory.getPool(
+            _bellaToken,
+            _wrappedNativeToken,
+            _bellaPoolV3feeTiers
+        );
+
+        uint160 sqrtPriceX96 = fixedSqrtPrice > 0 ? fixedSqrtPrice : calculateSqrtPriceX96();
+        // The normal scenario is when the Bella pool does not exist.
+        if (_bellaV3Pool == address(0)) {
+            _bellaV3Pool = factory.createPool(
+                _bellaToken,
+                _wrappedNativeToken,
+                _bellaPoolV3feeTiers
+            );
+            IUniswapV3Pool(_bellaV3Pool).initialize(sqrtPriceX96);
+        } else {
+            // The scenario with DOS prevention. Create a pool in advance with the correct price
+            // by computing the Bella token address.
+            (uint160 sqrtPriceX96current, , , , , , ) = IUniswapV3Pool(_bellaV3Pool).slot0();
+            if (sqrtPriceX96current != sqrtPriceX96) {
+                fixedSqrtPrice = sqrtPriceX96;
+                return;
+            }
+        }
+        bellaV3Pool = IUniswapV3Pool(_bellaV3Pool);
+        bytes32 salt = keccak256(abi.encode(msg.sender));
+        bellaToken = new Bella{ salt: salt }("Bella", "Bella", decimals);
+        require(address(bellaToken) == _bellaToken, "bellaToken address mismatch");
+        emit BellaDeployed(_bellaToken, _bellaV3Pool);
     }
 
     /**
      * @notice Distributes liquidity to Bella's liquidity pool.
      * @dev This function manages the distribution of Bella and Wrapped Native Token (e.g., WETH) liquidity
      * to the Uniswap V3 pool represented by `bellaV3Pool`. It ensures that there is a Bella token address set
-     * (ensuring `deployBalla` was called), mints Bella tokens, approves the necessary tokens for the positionManager,
+     * (ensuring `deployBella` was called), mints Bella tokens, approves the necessary tokens for the positionManager,
      * and then provides liquidity by minting a new position in the liquidity pool. Finally, it transfers any remaining
      * Wrapped Native Token balance to the Bella liquidity vault and initializes it with the provided parameters.
      *
-     * Reverts if the bellaToken has not been set, indicating deployBalla() should be called first.
+     * Reverts if the bellaToken has not been set, indicating deployBella() should be called first.
      * Also reverts if the Bella vault's initialization fails post-liquidity provision.
      */
     function distributeLiquidity() external {
-        require(address(bellaToken) != address(0), "call deployBalla() first");
+        require(address(bellaToken) != address(0), "call deployBella() first");
 
         // Determine the ordering of token addresses for Bella and Wrapped Native Token
         bool zeroForBella = address(bellaToken) < wrappedNativeToken;
@@ -420,7 +490,7 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     /// @notice This function is called as a callback from Chainlink's VRF to provide
     /// randomness for the game logic and updates the corresponding game round with results.
     /// @dev Iterates over `_randomWords`, interprets each as a dice roll, calculates winnings,
-    /// and mints reward points if applicable. Emits `DiceRollResult` event upon completion.
+    /// and mints reward points if applicable. Emits a `DiceRollResult` event upon completion.
     /// @param _gameId The unique identifier of the game round to fulfill.
     /// @param _randomWords An array of random words returned by the VRF callback.
     /// Each element represents a die roll outcome which is calculated as `(_randomWords[i] % 6) + 1`.
@@ -428,53 +498,39 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     /// @custom:require "invalid randomWords" The number of random words provided must match the number
     /// of dice rolls expected for the round (i.e., the length of `diceRollResult` array in the GameRound struct).
     function fulfillRandomWords(uint256 _gameId, uint256[] memory _randomWords) internal override {
-        if (delpoyRequestId != _gameId) {
-            GameRound storage round = gameRounds[_gameId];
-            require(round.user == address(0), "round not found");
-            uint256 length = _randomWords.length;
-            require(length == round.diceRollResult.length, "invalid randomWords");
-            uint256 totalWinnings;
-            uint256 sum69;
-            bool sixFound;
-            for (uint i; i < length; ) {
-                uint256 num = (_randomWords[i] % 6) + 1;
-                if (num == 2 || num == 4 || num == 6) {
-                    totalWinnings += round.betAmts[i] * num;
-                    if (length == 3) {
-                        if (num == 6 && !sixFound) {
-                            sixFound = true;
-                        } else {
-                            sum69 += num;
-                        }
-                    }
-                }
-                round.diceRollResult[i] = num;
-                unchecked {
-                    ++i;
+        GameRound storage round = gameRounds[_gameId];
+        require(round.user != address(0), "round not found");
+        uint256 length = _randomWords.length;
+        require(length == round.diceRollResult.length, "invalid randomWords");
+        uint256 totalWinnings;
+        uint256 sum69;
+        bool sixFound;
+        for (uint i; i < length; ) {
+            uint256 num = (_randomWords[i] % 6) + 1;
+            if (num == 2 || num == 4 || num == 6) {
+                totalWinnings += round.betAmts[i] * num;
+            }
+            if (length == 3) {
+                if (num == 6 && !sixFound) {
+                    sixFound = true;
+                } else {
+                    sum69 += num;
                 }
             }
-            if (length == 3 && sum69 == 9 && sixFound) {
-                totalWinnings = 0;
-                for (uint i; i < length; ) {
-                    totalWinnings += round.betAmts[i] * WIN69_MULTIPLIER;
-                }
+            round.diceRollResult[i] = num;
+            unchecked {
+                ++i;
             }
-
-            round.totalWinnings = totalWinnings;
-            round.fulfilled = true;
-            _mintPoints(round.user, totalWinnings);
-
-            emit DiceRollResult(round.user, _gameId);
-        } else if (address(bellaToken) == address(0)) {
-            bytes32 salt = keccak256(abi.encode(_randomWords[0], address(this)));
-            bellaToken = new Bella{ salt: salt }("Bella", "Bella", decimals);
-            bellaV3Pool = IUniswapV3Pool(
-                factory.createPool(address(bellaToken), wrappedNativeToken, bellaPoolV3feeTiers)
-            );
-            uint160 sqrtPriceX96 = _calculateSqrtPriceX96();
-            bellaV3Pool.initialize(sqrtPriceX96);
-            emit BellaDeployed(address(bellaToken), address(bellaV3Pool));
         }
+        if (length == 3 && sum69 == 9 && sixFound) {
+            totalWinnings = round.totalBet * WIN69_MULTIPLIER;
+        }
+
+        round.totalWinnings = totalWinnings;
+        round.fulfilled = true;
+        _mintPoints(round.user, totalWinnings);
+
+        emit DiceRollResult(round.user, _gameId);
     }
 
     /**
@@ -493,7 +549,7 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     ///      Requires the game to be over.
     ///      Requires the bellaToken to have been set and the caller to have a non-zero point balance.
     function redeem() external shouldGameIsOver {
-        require(uniPosTokenId != 0, "not distributed liquidity");
+        require(uniPosTokenId != 0, "liquidity not distributed yet");
         uint256 amount = balanceOf(msg.sender);
         require(amount > 0, "zero balance");
         _burnPoints(msg.sender, amount);
@@ -525,28 +581,6 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
         _burnPoints(msg.sender, amount);
         wrappedNativeToken.safeTransfer(msg.sender, withdrawAmt);
         emit EmergencyWithdraw(msg.sender, amount, withdrawAmt);
-    }
-
-    /**
-     * @dev Calculates the square root of the price, scaled by 2^96.
-     *      The calculation is done by obtaining the square root of the product of the total number of Bella tokens
-     *      and Wrapped Native Tokens, divided by 2 to get an average. This is used to calculate a normalized price of tokens
-     *      in terms of each other, which can be useful for certain financial operations such as providing liquidity or pricing swaps.
-     *      The function determines the order of division based on the addresses of `bellaToken` and `wrappedNativeToken` to ensure
-     *      a consistent result regardless of the pair ordering.
-     *
-     * @return sqrtPriceX96 The square root of the calculated price, represented as a fixed-point number with 96 bits
-     *                      representing the fractional part. This format is commonly used for representing prices in Uniswap v3.
-     */
-    function _calculateSqrtPriceX96() private view returns (uint160 sqrtPriceX96) {
-        bool zeroForBella = address(bellaToken) < wrappedNativeToken;
-        uint256 halfBella = totalSupply / 2;
-        uint256 halfNativeToken = wrappedNativeToken.getBalance() / 2;
-
-        uint256 sqrtPrice = zeroForBella
-            ? uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, halfNativeToken, halfBella)))
-            : uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, halfBella, halfNativeToken)));
-        sqrtPriceX96 = sqrtPrice.toUint160();
     }
 
     /**
@@ -625,5 +659,9 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
         userBalances[from] -= amount;
         totalSupply -= amount;
         emit BurnBellaPoints(from, amount);
+    }
+
+    function _blockTimestamp() internal view returns (uint256) {
+        return block.timestamp;
     }
 }

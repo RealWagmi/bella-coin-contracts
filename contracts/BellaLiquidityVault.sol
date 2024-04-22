@@ -8,6 +8,8 @@ import { INonfungiblePositionManager } from "./interfaces/uniswap/INonfungiblePo
 import { IUniswapV3Pool } from "./interfaces/uniswap/IUniswapV3Pool.sol";
 import { TransferHelper } from "./libraries/TransferHelper.sol";
 
+// import "hardhat/console.sol";
+
 contract BellaLiquidityVault is VRFV2WrapperConsumerBase, Ownable, ERC721Holder {
     using TransferHelper for address;
 
@@ -44,6 +46,7 @@ contract BellaLiquidityVault is VRFV2WrapperConsumerBase, Ownable, ERC721Holder 
     event TryToEnablePump(uint256 requestId);
 
     error PriceDeviationTooHigh(uint256 deviation);
+    error RequestTooExpensive(uint256 requiredAmt);
 
     /// @notice Initializes the contract with necessary addresses and tokenId.
     /// @dev Sets up token interfaces and associates the position with tokenId.
@@ -80,17 +83,21 @@ contract BellaLiquidityVault is VRFV2WrapperConsumerBase, Ownable, ERC721Holder 
     /// based on provided callbackGasLimit or uses a default value, transfers LINK tokens from the caller to
     /// the contract, and makes a randomness request. Updates the lastRequestId with the new request ID.
     /// @param callbackGasLimit The gas limit to be used for the callback function when randomness is requested.
+    /// @param maxLinkAmt The maximum amount of LINK tokens to be used for the request.
     /// If the provided gas limit is below the default, it will use the callbackGasLimitDefault.
-    function tryToEnablePump(uint32 callbackGasLimit) external {
+    function tryToEnablePump(uint32 callbackGasLimit, uint256 maxLinkAmt) external {
         require(posTokenId > 0, "not initialized");
-        require(block.timestamp - pumpLastTimestamp < pumpInterval, "too early to enable pump");
         require(!pumpEnabled, "pump already enabled");
+        require(block.timestamp > pumpLastTimestamp + pumpInterval, "too early to enable pump");
         pumpLastTimestamp = block.timestamp;
         if (callbackGasLimit < callbackGasLimitDefault) {
             callbackGasLimit = callbackGasLimitDefault;
         }
         // https://docs.chain.link/vrf/v2/estimating-costs
         uint256 requiredAmt = VRF_V2_WRAPPER.calculateRequestPrice(callbackGasLimit);
+        if (requiredAmt > maxLinkAmt) {
+            revert RequestTooExpensive(requiredAmt);
+        }
         // need to approve LINK token
         address(LINK).safeTransferFrom(msg.sender, address(this), requiredAmt);
         uint256 requestId = requestRandomness(callbackGasLimit, requestConfirmations, 1);

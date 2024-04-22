@@ -75,7 +75,10 @@ const config: HardhatUserConfig = {
           },
         },
       }
-    ]
+    ],
+    overrides: {
+      'contracts/mock/ForceSend.sol': COMPILER_SETTINGS_OLD,
+    },
   },
   networks: {
     hardhat: {
