@@ -15,18 +15,18 @@ import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import { IERC20, BellaDiceGame, BellaLiquidityVault, Bella, IWETH, QuoterV3, IUniswapV3Pool } from "../typechain-types";
 import { Console } from "console";
 import { link } from "fs";
+import { deriveSponsorWalletAddress } from "@api3/airnode-admin";
+import { BinaryLike } from "crypto";
 
 describe("Bella Dice Game", function () {
-  const LinkTokenAddress = "0x514910771AF9Ca656af840dff83E8264EcF986CA";
-  const VRFWrapper = "0x5A861794B927983406fCE1D062e00b9368d97Df6";
+  const AirnodeRrpV0Address = "0xa0AD79D995DdeeB18a14eAef56A549A04e3Aa1Bd";
   const WETH_ADDRESS = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
   const UNDERLYING_POSITION_MANAGER_ADDRESS = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88";
   const UNISWAP_V3_FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
-  const DONOR_LINK_ADDRESS = "0xF977814e90dA44bFA03b6295A0616a897441aceC";
 
   let owner: HardhatEthersSigner;
   let alice: HardhatEthersSigner;
-  let vrfwrapper: HardhatEthersSigner;
+  let airnodeRrpV0: HardhatEthersSigner;
   let bob: HardhatEthersSigner;
   let startGameSnapshot: SnapshotRestorer;
   let purchasePointsSnapshot: SnapshotRestorer;
@@ -37,8 +37,8 @@ describe("Bella Dice Game", function () {
   let weth9: IWETH;
   let vault: BellaLiquidityVault;
   let game: BellaDiceGame;
-  let linkToken: IERC20;
   let quoter: QuoterV3;
+  const sponsorWalletAddress: string = "0x8A6165aE122b5bA0ee324263b00C25bBC61582f3";
 
   interface Asset {
     tokenAddress: string;
@@ -73,70 +73,63 @@ describe("Bella Dice Game", function () {
     weth9.connect(alice).deposit({ value: ethers.parseUnits("1000000", 18) });
     weth9.connect(bob).deposit({ value: ethers.parseUnits("1000000", 18) });
 
-    linkToken = await ethers.getContractAt("IERC20", LinkTokenAddress);
-
     const BellaLiquidityVaultFactory = await ethers.getContractFactory("BellaLiquidityVault");
-    vault = (await BellaLiquidityVaultFactory.deploy(LinkTokenAddress, VRFWrapper)) as BellaLiquidityVault;
+    vault = (await BellaLiquidityVaultFactory.deploy(AirnodeRrpV0Address)) as BellaLiquidityVault;
 
     const BellaDiceGameFactory = await ethers.getContractFactory("BellaDiceGame");
     game = (await BellaDiceGameFactory.deploy(
-      LinkTokenAddress,
-      VRFWrapper,
       WETH_ADDRESS,
       await vault.getAddress(),
       UNDERLYING_POSITION_MANAGER_ADDRESS,
-      UNISWAP_V3_FACTORY
+      UNISWAP_V3_FACTORY,
+      AirnodeRrpV0Address
     )) as BellaDiceGame;
 
-    await getTokens(
-      DONOR_LINK_ADDRESS,
-      [owner.address, alice.address, bob.address],
-      [{ tokenAddress: LinkTokenAddress, amount: ethers.parseUnits("10", 18) }]
-    );
+    await maxApprove(owner, await game.getAddress(), [WETH_ADDRESS]);
+    await maxApprove(alice, await game.getAddress(), [WETH_ADDRESS]);
+    await maxApprove(bob, await game.getAddress(), [WETH_ADDRESS]);
 
-    await maxApprove(owner, await game.getAddress(), [LinkTokenAddress, WETH_ADDRESS]);
-    await maxApprove(alice, await game.getAddress(), [LinkTokenAddress, WETH_ADDRESS]);
-    await maxApprove(bob, await game.getAddress(), [LinkTokenAddress, WETH_ADDRESS]);
     const ForceSend = await ethers.getContractFactory("ForceSend");
     let forceSend = await ForceSend.deploy();
-    await forceSend.go(VRFWrapper, { value: ethers.parseUnits("10", "ether") });
-    await impersonateAccount(VRFWrapper);
-    vrfwrapper = await ethers.provider.getSigner(VRFWrapper);
+    await forceSend.go(AirnodeRrpV0Address, { value: ethers.parseUnits("10", "ether") });
+    await impersonateAccount(AirnodeRrpV0Address);
+    airnodeRrpV0 = await ethers.provider.getSigner(AirnodeRrpV0Address);
+    // const anuXpub =
+    //   "xpub6DXSDTZBd4aPVXnv6Q3SmnGUweFv6j24SK77W4qrSFuhGgi666awUiXakjXruUSCDQhhctVG7AQt67gMdaRAsDnDXv23bBRKsMWvRzo6kbf"
+
+    // const anuAirnodeAddress = "0x9d3C147cA16DB954873A498e0af5852AB39139f2"
+
+    // sponsorWalletAddress = deriveSponsorWalletAddress(
+    //   anuXpub,
+    //   anuAirnodeAddress,
+    //   await game.getAddress() // used as the sponsor
+    // );
+    // console.log("sponsorWalletAddress", sponsorWalletAddress);
   });
 
   describe("Start the game and purchase BellaPoints", function () {
     it("should revert if the BellaVault is not owned by the contract", async function () {
       const deadline = (await time.latest()) + 60;
-      await expect(game.startGame(ethers.parseUnits("0.1", 18), deadline)).to.be.revertedWith(
-        "vault not owned by this contract"
+      await expect(game.startGame(sponsorWalletAddress, ethers.parseUnits("0.1", 18), deadline)).to.be.revertedWith(
+        "Ownable: caller is not the owner"
       );
-    });
-
-    it("should revert if the Link balance of the contract is zero", async function () {
-      const deadline = (await time.latest()) + 60;
       await vault.transferOwnership(await game.getAddress());
-      await expect(game.startGame(ethers.parseUnits("0.1", 18), deadline)).to.be.revertedWith("no LINK");
     });
 
     it("should revert purchase Bella points if the game is not started", async function () {
       await expect(game.purchasePoints(1)).to.be.revertedWith("game not started yet");
       // Attempt to send ETH to the contract, which should fail
-      const sendValue = ethers.parseEther("1");
-
-      await expect(
-        alice.sendTransaction({
-          to: await game.getAddress(),
-          value: sendValue,
-        })
-      ).to.be.revertedWith("game not started yet");
+      const sendValue = await game.calculatePaymentAmount(1);
+      await expect(game.purchasePointsEth(1, { value: sendValue })).to.be.revertedWith("game not started yet");
     });
 
     it("should start the game with correct initial token rate and emit event", async function () {
       const deadline = (await time.latest()) + 60;
-      linkToken.connect(owner).transfer(await game.getAddress(), ethers.parseUnits("5", 18));
 
       const initialTokenRate = ethers.parseUnits("10", 18); // 10 Bella per WETH
-      await expect(game.startGame(initialTokenRate, deadline)).to.emit(game, "StartGame").withArgs(initialTokenRate);
+      await expect(game.startGame(sponsorWalletAddress, initialTokenRate, deadline))
+        .to.emit(game, "StartGame")
+        .withArgs(initialTokenRate, sponsorWalletAddress);
 
       expect(await game.initialTokenRate()).to.equal(initialTokenRate);
       // Verify endTime is set correctly, taking into account block timestamp variability
@@ -169,12 +162,14 @@ describe("Bella Dice Game", function () {
 
     it("should revert if the game is started more than once", async function () {
       const deadline = (await time.latest()) + 60;
-      await expect(game.startGame(ethers.parseUnits("10", 18), deadline)).to.be.revertedWith("only once");
+      await expect(game.startGame(sponsorWalletAddress, ethers.parseUnits("10", 18), deadline)).to.be.revertedWith(
+        "only once"
+      );
     });
 
     it("should revert if the initial token rate is not greater than zero", async function () {
       const deadline = (await time.latest()) + 60;
-      await expect(game.startGame(0, deadline)).to.be.revertedWith("only once");
+      await expect(game.startGame(sponsorWalletAddress, 0, deadline)).to.be.revertedWith("only once");
     });
 
     it("should revert if the game is over", async function () {
@@ -182,30 +177,27 @@ describe("Bella Dice Game", function () {
       await expect(game.purchasePoints(1)).to.be.revertedWith("game over");
 
       // Attempt to send ETH to the contract, which should fail
-      const sendValue = ethers.parseEther("1");
+      const sendValue = await game.calculatePaymentAmount(1);
 
-      await expect(
-        alice.sendTransaction({
-          to: await game.getAddress(),
-          value: sendValue,
-        })
-      ).to.be.revertedWith("game over");
+      await expect(game.purchasePointsEth(1, { value: sendValue })).to.be.revertedWith("game over");
     });
 
     it("Should receive Ether and mint tokens", async function () {
       await startGameSnapshot.restore();
-      const sendValue = ethers.parseEther("1"); // Equivalent to 1 ETH
       const expectedTokenAmount = ethers.parseUnits("10", 18); /* Call calculatePointsAmount with sendValue */
 
-      // We will now send ETH to the contract to simulate purchasing tokens.
-      const tx = await alice.sendTransaction({
-        to: await game.getAddress(),
-        value: sendValue,
-      });
+      const sendValue = await game.calculatePaymentAmount(expectedTokenAmount);
+      expect(sendValue).to.equal(ethers.parseEther("1"));
+
+      const tx = await game.connect(alice).purchasePointsEth(expectedTokenAmount, { value: sendValue });
 
       await expect(tx)
         .to.emit(game, "MintBellaPoints") // Assuming this is an event emitted by _mintPoints
         .withArgs(alice.address, expectedTokenAmount);
+
+      await expect(tx)
+        .to.emit(game, "PurchasePoints") // Assuming this is an event emitted by _mintPoints
+        .withArgs(alice.address, sendValue);
 
       // Check WETH balance of the contract to ensure deposit was successful
       expect(await weth9.balanceOf(await game.getAddress())).to.equal(sendValue);
@@ -223,10 +215,12 @@ describe("Bella Dice Game", function () {
 
       // Act & Assert Precondition (Game should not be over)
       expect(await game.gameNotOver()).to.be.true;
-
-      await expect(game.connect(bob).purchasePoints(desiredAmountOut))
+      const tx = await game.connect(bob).purchasePoints(desiredAmountOut);
+      await expect(tx)
         .to.emit(game, "MintBellaPoints") // Assuming there is such an event
         .withArgs(bob.address, desiredAmountOut);
+
+      await expect(tx).to.emit(game, "PurchasePoints").withArgs(bob.address, paymentAmount);
 
       // Assert Postconditions
       const bobBalance = await game.balanceOf(bob.address);
@@ -280,133 +274,64 @@ describe("Bella Dice Game", function () {
       await purchasePointsSnapshot.restore();
       let invalidBetAmounts = [0]; // Zero bet amount, which is invalid
       // Attempt to place a bet with invalid bet amounts and expect failure
-      await expect(game.connect(alice).bet(invalidBetAmounts)).to.be.revertedWith("zero amount");
+      await expect(
+        game.connect(alice).bet(invalidBetAmounts, { value: ethers.parseEther("0.001") })
+      ).to.be.revertedWith("zero amount");
 
       invalidBetAmounts = [1, 1, 1, 1]; // Zero bet amount, which is invalid
       // Attempt to place a bet with invalid bet amounts and expect failure
-      await expect(game.connect(alice).bet(invalidBetAmounts)).to.be.revertedWith("invalid betAmts");
+      await expect(
+        game.connect(alice).bet(invalidBetAmounts, { value: ethers.parseEther("0.001") })
+      ).to.be.revertedWith("invalid betAmts");
     });
 
     it("should fail if user does not have enough points", async function () {
       const betAmts = [ethers.parseEther("10"), ethers.parseEther("10"), ethers.parseEther("10")];
       // Attempt to place a bet and expect failure due to insufficient points
-      await expect(game.connect(alice).bet(betAmts)).to.be.revertedWith("points are not enough");
+      await expect(game.connect(alice).bet(betAmts, { value: ethers.parseEther("0.001") })).to.be.revertedWith(
+        "points are not enough"
+      );
     });
 
-    it("should revert if there is not enough LINK to fulfill the VRF request", async function () {
-      await game.withdrawLink();
+    it("should revert if there is not ETH to fulfill the QRNG request", async function () {
       const betAmts = [ethers.parseEther("1"), ethers.parseEther("1"), ethers.parseEther("1")];
-      // Attempt to place a bet and expect failure due to not enough LINK
-      await expect(game.connect(alice).bet(betAmts)).to.be.reverted;
+      // Attempt to place a bet and expect failure due to not ETH to fulfill the QRNG request
+      await expect(game.connect(alice).bet(betAmts)).to.be.revertedWith("eth is zero");
       // Replenish the LINK balance
-      linkToken.connect(owner).transfer(await game.getAddress(), ethers.parseUnits("5", 18));
     });
 
     it("should allow a user to place a bet (3 dice) when conditions are met", async function () {
-      const totalSupplyBefore = await game.totalSupply();
-      const wethBalanceBefore = await weth9.balanceOf(await game.getAddress());
-      const userBalanceWethBefore = await weth9.balanceOf(alice.address);
-      const userBalanceBefore = await game.balanceOf(alice.address);
       const betAmts = [ethers.parseEther("1"), ethers.parseEther("2"), ethers.parseEther("3")];
-      const bet = await game.connect(alice).bet(betAmts);
+      const bet = await game.connect(alice).bet(betAmts, { value: ethers.parseEther("0.001") });
       await expect(bet).to.emit(game, "Bet").withArgs(anyValue, alice.address, ethers.parseEther("6"));
-
-      const totalSupplyAfter = await game.totalSupply();
-      expect(totalSupplyAfter).to.equal(totalSupplyBefore - ethers.parseEther("6"));
-      const wethBalanceAfter = await weth9.balanceOf(await game.getAddress());
-      expect(wethBalanceAfter).to.equal(wethBalanceBefore);
-      const userBalanceWethAfter = await weth9.balanceOf(alice.address);
-      expect(userBalanceWethAfter).to.equal(userBalanceWethBefore);
-      const userBalanceAfter = await game.balanceOf(alice.address);
-      expect(userBalanceAfter).to.equal(userBalanceBefore - ethers.parseEther("6"));
+      expect(await ethers.provider.getBalance(sponsorWalletAddress)).to.equal(ethers.parseEther("0.001"));
     });
 
     it("should allow a user to place a bet (2 dice) when conditions are met", async function () {
-      const totalSupplyBefore = await game.totalSupply();
-      const wethBalanceBefore = await weth9.balanceOf(await game.getAddress());
-      const userBalanceWethBefore = await weth9.balanceOf(bob.address);
-      const userBalanceBefore = await game.balanceOf(bob.address);
       const betAmts = [ethers.parseEther("2"), ethers.parseEther("3")];
-      const bet = await game.connect(bob).bet(betAmts);
+      const bet = await game.connect(bob).bet(betAmts, { value: ethers.parseEther("0.001") });
       await expect(bet).to.emit(game, "Bet").withArgs(anyValue, bob.address, ethers.parseEther("5"));
 
-      const totalSupplyAfter = await game.totalSupply();
-      expect(totalSupplyAfter).to.equal(totalSupplyBefore - ethers.parseEther("5"));
-      const wethBalanceAfter = await weth9.balanceOf(await game.getAddress());
-      expect(wethBalanceAfter).to.equal(wethBalanceBefore);
-      const userBalanceWethAfter = await weth9.balanceOf(bob.address);
-      expect(userBalanceWethAfter).to.equal(userBalanceWethBefore);
-      const userBalanceAfter = await game.balanceOf(bob.address);
-      expect(userBalanceAfter).to.equal(userBalanceBefore - ethers.parseEther("5"));
+      expect(await ethers.provider.getBalance(sponsorWalletAddress)).to.equal(ethers.parseEther("0.002"));
     });
 
-    it("should fail if the last game round is not fulfilled", async function () {
-      const betAmts = [ethers.parseEther("1"), ethers.parseEther("1"), ethers.parseEther("1")];
-      await expect(game.connect(bob).bet(betAmts)).to.be.revertedWith("last round not fulfilled");
-    });
+    it("should allow a user to place a bet (1 dice) after emergencyFulFilledLastBet", async function () {
+      const betAmts = [ethers.parseEther("5")];
+      const bet = await game.connect(bob).bet(betAmts, { value: ethers.parseEther("0.001") });
+      await expect(bet).to.emit(game, "Bet").withArgs(anyValue, bob.address, ethers.parseEther("5"));
 
-    describe("Emergency fulFilled last bet", function () {
-      it("Should only be callable by the contract owner", async function () {
-        // Attempt to fulfill last bet by someone who is not the owner and expect failure
-        await expect(game.connect(alice).emergencyFulFilledLastBet(bob.address)).to.be.revertedWith(
-          "Ownable: caller is not the owner"
-        );
-      });
-
-      it("Should revert if there are no rounds for the user", async function () {
-        // Calling the emergency fulfill on a user with no rounds should fail
-        await expect(game.emergencyFulFilledLastBet(owner.address)).to.be.revertedWith("round not found");
-      });
-
-      it("Should mark the last round as fulfilled, mint points, reset total bet, and emit an event", async function () {
-        // Arrange
-        const totalSupplyBefore = await game.totalSupply();
-        const wethBalanceBefore = await weth9.balanceOf(await game.getAddress());
-        const userBalanceWethBefore = await weth9.balanceOf(bob.address);
-        const userBalanceBefore = await game.balanceOf(bob.address);
-
-        // Act
-        const tx = await game.emergencyFulFilledLastBet(bob.address);
-
-        // Assert
-        await expect(tx).to.emit(game, "EmergencyFulFilledLastBet").withArgs(bob.address, anyValue);
-
-        const totalSupplyAfter = await game.totalSupply();
-        expect(totalSupplyAfter).to.equal(totalSupplyBefore + ethers.parseEther("5"));
-        const wethBalanceAfter = await weth9.balanceOf(await game.getAddress());
-        expect(wethBalanceAfter).to.equal(wethBalanceBefore);
-        const userBalanceWethAfter = await weth9.balanceOf(bob.address);
-        expect(userBalanceWethAfter).to.equal(userBalanceWethBefore);
-        const userBalanceAfter = await game.balanceOf(bob.address);
-        expect(userBalanceAfter).to.equal(userBalanceBefore + ethers.parseEther("5"));
-      });
-
-      it("should allow a user to place a bet (1 dice) after emergencyFulFilledLastBet", async function () {
-        const totalSupplyBefore = await game.totalSupply();
-        const wethBalanceBefore = await weth9.balanceOf(await game.getAddress());
-        const userBalanceWethBefore = await weth9.balanceOf(bob.address);
-        const userBalanceBefore = await game.balanceOf(bob.address);
-        const betAmts = [ethers.parseEther("5")];
-        const bet = await game.connect(bob).bet(betAmts);
-        await expect(bet).to.emit(game, "Bet").withArgs(anyValue, bob.address, ethers.parseEther("5"));
-
-        const totalSupplyAfter = await game.totalSupply();
-        expect(totalSupplyAfter).to.equal(totalSupplyBefore - ethers.parseEther("5"));
-        const wethBalanceAfter = await weth9.balanceOf(await game.getAddress());
-        expect(wethBalanceAfter).to.equal(wethBalanceBefore);
-        const userBalanceWethAfter = await weth9.balanceOf(bob.address);
-        expect(userBalanceWethAfter).to.equal(userBalanceWethBefore);
-        const userBalanceAfter = await game.balanceOf(bob.address);
-        expect(userBalanceAfter).to.equal(userBalanceBefore - ethers.parseEther("5"));
-      });
+      // The Eth balance of the sponsorship wallet must not be zero
+      expect(await ethers.provider.getBalance(sponsorWalletAddress)).to.equal(ethers.parseEther("0.003"));
     });
   });
 
-  describe("fulfillRandomWords", function () {
+  describe("game logic", function () {
     it("should reject when round is not found", async function () {
-      const invalidGameId = 999; // gameId that doesn't exist
+      const invalidGameId = "0x1238798732c92a8cc8bcd8283a0a15da26bc2fb697fbc9f07b89bcbf0d959d4c"; // gameId that doesn't exist
       const randomWords = [123, 456, 789];
-      await expect(game.connect(vrfwrapper).rawFulfillRandomWords(invalidGameId, randomWords)).to.be.revertedWith(
+      const data = ethers.AbiCoder.defaultAbiCoder().encode(["uint256[]"], [randomWords]);
+
+      await expect(game.connect(airnodeRrpV0).fulfillRandomWords(invalidGameId, data)).to.be.revertedWith(
         "round not found"
       );
     });
@@ -418,7 +343,8 @@ describe("Bella Dice Game", function () {
       expect(lastRound.fulfilled).to.equal(false);
       expect(lastRound.totalBet).to.equal(ethers.parseEther("5"));
       const randomWords = [27]; // dice number = 27 % 6 + 1 = 4
-      await game.connect(vrfwrapper).rawFulfillRandomWords(id, randomWords);
+      const data = ethers.AbiCoder.defaultAbiCoder().encode(["uint256[]"], [randomWords]);
+      await game.connect(airnodeRrpV0).fulfillRandomWords(id, data);
       const [idAfter, lastRoundAfter] = await game.getUserLastGameInfo(bob.address);
       expect(lastRoundAfter.fulfilled).to.equal(true);
       expect(lastRoundAfter.totalWinnings).to.equal(ethers.parseEther("20")); //5*4
@@ -427,8 +353,8 @@ describe("Bella Dice Game", function () {
       expect(idAfter).to.equal(id);
       const totalSupplyAfter = await game.totalSupply();
       const userBalanceAfter = await game.balanceOf(bob.address);
-      expect(totalSupplyAfter).to.equal(totalSupplyBefore + ethers.parseEther("20"));
-      expect(userBalanceAfter).to.equal(userBalanceBefore + ethers.parseEther("20"));
+      expect(totalSupplyAfter).to.equal(totalSupplyBefore + ethers.parseEther("20") - lastRound.totalBet);
+      expect(userBalanceAfter).to.equal(userBalanceBefore + ethers.parseEther("20") - lastRound.totalBet);
     });
 
     it("should calculate lucky 69 winnings correctly", async function () {
@@ -438,7 +364,8 @@ describe("Bella Dice Game", function () {
       expect(lastRound.fulfilled).to.equal(false);
       expect(lastRound.totalBet).to.equal(ethers.parseEther("6"));
       const randomWords = [29, 28, 27]; // dice number = 29 % 6 + 1 = 6, 28 % 6 + 1 = 5, 27 % 6 + 1 = 4
-      await game.connect(vrfwrapper).rawFulfillRandomWords(id, randomWords);
+      const data = ethers.AbiCoder.defaultAbiCoder().encode(["uint256[]"], [randomWords]);
+      await game.connect(airnodeRrpV0).fulfillRandomWords(id, data);
       const [, lastRoundAfter] = await game.getUserLastGameInfo(alice.address);
       expect(lastRoundAfter.fulfilled).to.equal(true);
       const expectedDiceRollResult = "6,5,4";
@@ -446,8 +373,8 @@ describe("Bella Dice Game", function () {
       expect(lastRoundAfter.totalWinnings).to.equal(ethers.parseEther("60")); //1*10+2*10+3*10
       const totalSupplyAfter = await game.totalSupply();
       const userBalanceAfter = await game.balanceOf(alice.address);
-      expect(totalSupplyAfter).to.equal(totalSupplyBefore + ethers.parseEther("60"));
-      expect(userBalanceAfter).to.equal(userBalanceBefore + ethers.parseEther("60"));
+      expect(totalSupplyAfter).to.equal(totalSupplyBefore + ethers.parseEther("60") - lastRound.totalBet);
+      expect(userBalanceAfter).to.equal(userBalanceBefore + ethers.parseEther("60") - lastRound.totalBet);
       betSnapshot = await takeSnapshot();
     });
   });
@@ -556,21 +483,18 @@ describe("Bella Dice Game", function () {
       const bellaV3Pool = await game.bellaV3Pool();
       const tokenId = await game.uniPosTokenId();
 
-      expect(await vault.wrappedNativeToken()).to.equal(WETH_ADDRESS);
+      expect(await vault.wrappedNativeTokenAddress()).to.equal(WETH_ADDRESS);
       expect(await vault.positionManager()).to.equal(UNDERLYING_POSITION_MANAGER_ADDRESS);
       expect(await vault.bellaV3Pool()).to.equal(bellaV3Pool);
       expect(await vault.bellaToken()).to.equal(bellaTokenAddress);
       expect(await vault.posTokenId()).to.equal(tokenId);
       expect(await vault.zeroForTokenIn()).to.equal(false); // WETH_ADDRESS is tokenIn(token1)
+      expect(await vault.sponsorWallet()).to.equal(sponsorWalletAddress);
     });
 
     it("Should revert if tryToEnablePump called too early", async () => {
-      const callbackGasLimit = 300000; // Some gas limit value
-
-      await maxApprove(alice, await vault.getAddress(), [LinkTokenAddress]);
-      let maxLinkAmt = ethers.parseEther("0.35");
-
-      await expect(vault.connect(alice).tryToEnablePump(callbackGasLimit, maxLinkAmt)).to.be.revertedWith(
+      const callbackGasPayment = ethers.parseEther("0.001");
+      await expect(vault.connect(alice).tryToEnablePump({ value: callbackGasPayment })).to.be.revertedWith(
         "too early to enable pump"
       );
     });
@@ -585,39 +509,43 @@ describe("Bella Dice Game", function () {
 
       await mineUpTo(BigInt(currentTimestamp) + pumpInterval);
 
-      const callbackGasLimit = 300000; // Some gas limit value
+      expect(await vault.isTimeToPump()).to.be.equal(true);
 
-      await maxApprove(alice, await vault.getAddress(), [LinkTokenAddress]);
-      let maxLinkAmt = ethers.parseEther("0.35");
+      const callbackGasPayment = ethers.parseEther("0.001");
 
-      // Listen for the TryToEnablePump event
-      await expect(vault.connect(alice).tryToEnablePump(callbackGasLimit, maxLinkAmt))
-        .to.emit(vault, "TryToEnablePump")
-        .withArgs(anyValue /* expected requestId */);
-
-      // Check if the state variables were updated correctly
-      currentTimestamp = await time.latest();
-      expect(await vault.pumpLastTimestamp()).to.be.equal(currentTimestamp);
+      const tx = await vault.connect(alice).tryToEnablePump({ value: callbackGasPayment });
+      const txReceipt = await tx.wait(1, 5000)!;
+      let requestId;
+      if (txReceipt) {
+        const index = txReceipt.logs.findIndex((log) => log.topics[0] === ethers.id("TryToEnablePump(bytes32)"));
+        if (index !== -1 && txReceipt.logs[index]) {
+          requestId = (txReceipt.logs[index] as any).args[0];
+        } else {
+          throw new Error("DecreaseLiquidity event not found in logs.");
+        }
+      } else {
+        throw new Error("Transaction failed or was not confirmed.");
+      }
       // Assuming requestId is stored sequentially starting from 1
-      expect(await vault.lastRequestId()).to.be.gt(0);
-      // simulate the fulfillRandomWords callback
-      const requestId = await vault.lastRequestId();
+      expect(await vault.pendingRequestIds(requestId)).to.be.equal(true);
+
       const randomWords = [2];
-      await expect(vault.connect(vrfwrapper).rawFulfillRandomWords(requestId, randomWords))
+      const data = ethers.AbiCoder.defaultAbiCoder().encode(["uint256[]"], [randomWords]);
+      await expect(vault.connect(airnodeRrpV0).fulfillRandomWords(requestId, data))
         .to.emit(vault, "PumpEnabled")
         .withArgs(true, requestId);
       expect(await vault.pumpEnabled()).to.be.true;
+      // Check if the state variables were updated correctly
+      currentTimestamp = await time.latest();
+      expect(await vault.pumpLastTimestamp()).to.be.equal(currentTimestamp);
 
       pumpSnapshot = await takeSnapshot();
     });
 
     it("Should revert if pump is already enabled", async () => {
-      const callbackGasLimit = 300000; // Some gas limit value
+      const callbackGasPayment = ethers.parseEther("0.001");
 
-      await maxApprove(alice, await vault.getAddress(), [LinkTokenAddress]);
-      let maxLinkAmt = ethers.parseEther("0.35");
-
-      await expect(vault.connect(alice).tryToEnablePump(callbackGasLimit, maxLinkAmt)).to.be.revertedWith(
+      await expect(vault.connect(alice).tryToEnablePump({ value: callbackGasPayment })).to.be.revertedWith(
         "pump already enabled"
       );
     });

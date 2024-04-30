@@ -17,9 +17,9 @@
         "@openzeppelin/contracts": "4.9.5"
     },
     "devDependencies": {
+        "@api3/airnode-protocol": "^0.14.1",
         "@nomicfoundation/hardhat-toolbox": "^5.0.0",
         "@openzeppelin/contracts": "4.9.5",
-        "@chainlink/contracts": "^1.0.0",
         "@types/node": "^20.11.30",
         "dotenv": "^16.4.5",
         "hardhat-contract-sizer": "^2.10.0",
@@ -27,5 +27,8 @@
         "prettier-plugin-solidity": "^1.3.1",
         "ts-node": "^10.9.2",
         "typescript": "^5.4.2"
+    },
+    "dependencies": {
+        "@api3/airnode-admin": "^0.14.1"
     }
 }

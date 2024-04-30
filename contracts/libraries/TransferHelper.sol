@@ -15,7 +15,7 @@ library TransferHelper {
         (bool success, bytes memory data) = token.call(
             abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, value)
         );
-        require(success && (data.length == 0 || abi.decode(data, (bool))), "LC-STF");
+        require(success && (data.length == 0 || abi.decode(data, (bool))), "BP-STF");
     }
 
     /// @notice Transfers tokens from msg.sender to a recipient
@@ -27,7 +27,7 @@ library TransferHelper {
         (bool success, bytes memory data) = token.call(
             abi.encodeWithSelector(IERC20.transfer.selector, to, value)
         );
-        require(success && (data.length == 0 || abi.decode(data, (bool))), "LC-ST");
+        require(success && (data.length == 0 || abi.decode(data, (bool))), "BP-ST");
     }
 
     function getBalance(address token) internal view returns (uint256 balance) {
@@ -48,6 +48,6 @@ library TransferHelper {
         (bool success, bytes memory data) = token.call(
             abi.encodeWithSelector(IERC20.approve.selector, spender, amount)
         );
-        require(success && (data.length == 0 || abi.decode(data, (bool))), "LC-SA");
+        require(success && (data.length == 0 || abi.decode(data, (bool))), "BP-SA");
     }
 }
