@@ -1,14 +1,16 @@
 import hardhat, { ethers } from "hardhat";
 import { deriveSponsorWalletAddress } from "@api3/airnode-admin";
-import { time } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+
 async function main() {
   const [deployer] = await ethers.getSigners();
   const network = hardhat.network.name;
+
+
 
   console.log(`[${network}] deployer address: ${deployer.address}`);
 
@@ -69,28 +71,34 @@ async function main() {
 
   await sleep(10000);
 
-  const deadline = (await time.latest()) + 120;
+  // const diceGame = await ethers.getContractAt("BellaDiceGame", "0x5Cb58CEDE5C98B87bEdbF03A66EB25A6597fA3D0");
+  // const sponsorWalletAddress = "0x37402cE2CeC1C71588944cCb8aa2Aa25528B8D6E";
+
+  const latestBlock = (await hardhat.network.provider.send("eth_getBlockByNumber", ["latest", false])) as { timestamp: string };
+  const deadline = parseInt(latestBlock.timestamp, 16) + 120;
+  await sleep(1000);
+  console.log("starting game...", deadline);
   const initialTokenRate = ethers.parseUnits("1000", 18); // 1000 Bella per WETH
   await diceGame.startGame(sponsorWalletAddress, initialTokenRate, deadline);
 
   console.log("game started!");
 
-  await hardhat.run("verify:verify", {
-    address: vaultAddress,
-    constructorArguments: [AirnodeRrpV0Address],
-  });
-  await sleep(5000);
+  // await hardhat.run("verify:verify", {
+  //   address: vaultAddress,
+  //   constructorArguments: [AirnodeRrpV0Address],
+  // });
+  // await sleep(5000);
 
-  await hardhat.run("verify:verify", {
-    address: diceGameAddress,
-    constructorArguments: [
-      WETH_ADDRESS,
-      vaultAddress,
-      UNDERLYING_POSITION_MANAGER_ADDRESS,
-      UNISWAP_V3_FACTORY,
-      AirnodeRrpV0Address,
-    ],
-  });
+  // await hardhat.run("verify:verify", {
+  //   address: diceGameAddress,
+  //   constructorArguments: [
+  //     WETH_ADDRESS,
+  //     vaultAddress,
+  //     UNDERLYING_POSITION_MANAGER_ADDRESS,
+  //     UNISWAP_V3_FACTORY,
+  //     AirnodeRrpV0Address,
+  //   ],
+  // });
 
   console.log("done!");
   process.exit(0);
