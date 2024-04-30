@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { VRFV2WrapperConsumerBase } from "@chainlink/contracts/src/v0.8/vrf/VRFV2WrapperConsumerBase.sol";
+import { RrpRequesterV0 } from "@api3/airnode-protocol/contracts/rrp/requesters/RrpRequesterV0.sol";
 import { IWETH } from "./interfaces/IWETH.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Bella } from "./Bella.sol";
@@ -17,11 +17,9 @@ import { LiquidityAmounts, FullMath } from "./vendor0.8/uniswap/LiquidityAmounts
 import { AmountsLiquidity } from "./libraries/AmountsLiquidity.sol";
 import { TransferHelper } from "./libraries/TransferHelper.sol";
 
-// import "hardhat/console.sol";
-
-contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
+contract BellaDiceGame is RrpRequesterV0, Ownable {
     using TransferHelper for address;
-    using EnumerableSet for EnumerableSet.UintSet;
+    using EnumerableSet for EnumerableSet.Bytes32Set;
     using SafeCast for uint256;
 
     struct GameRound {
@@ -40,7 +38,6 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     // Cannot exceed VRFV2Wrapper.getConfig().maxNumWords.
     uint256 public constant MAX_NUM_WORDS = 3;
 
-    uint16 public constant requestConfirmations = 10;
     uint24 public constant bellaPoolV3feeTiers = 10000;
     int24 public constant bellaPoolV3TickSpacing = 200;
 
@@ -51,39 +48,37 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     IUniswapV3Pool public bellaV3Pool;
     /// @notice Wrapped native token on current network
     address public immutable wrappedNativeToken;
+    address payable public sponsorWallet;
+    address public constant airnode = 0x9d3C147cA16DB954873A498e0af5852AB39139f2; // The address of the QRNG Airnode
+    bytes32 public constant endpointIdUint256Array =
+        0x27cc2713e7f968e4e86ed274a051a5c8aaee9cca66946f23af6f29ecea9704c3;
     uint160 public fixedSqrtPrice;
     uint256 public immutable oneNativeToken;
     /// @notice Timestamp when the geme ower
     uint256 public endTime;
     uint256 public uniPosTokenId;
 
-    // Test and adjust
-    // this limit based on the network that you select, the size of the request,
-    // and the processing of the callback request in the fulfillRandomWords()
-    // function.
-    uint32 callbackGasLimit = 200000;
     /// @notice Initial rate of tokens per wrappedNativeToken
     uint256 public initialTokenRate;
     string public constant name = "Bella Dice Game";
     string public symbol = "BellaPoints";
     // The total supply of points in existence
     uint256 public totalSupply;
-    uint256 public lastgameId;
+    bytes32 public lastgameId;
     // Maps an address to their current balance
     mapping(address => uint256) private userBalances;
     // Maps a game ID to its round information
-    mapping(uint256 => GameRound) public gameRounds; /* gameId --> GameRound */
+    mapping(bytes32 => GameRound) public gameRounds; /* gameId --> GameRound */
     // Maps an address to their game IDs
-    mapping(address => EnumerableSet.UintSet) private userGameIds;
+    mapping(address => EnumerableSet.Bytes32Set) private userGameIds;
 
     constructor(
-        address linkAddress,
-        address wrapperAddress,
         address wrappedNativeTokenAddress,
         address liquidityVaultAddress,
         address positionManagerAddress,
-        address factoryAddress
-    ) VRFV2WrapperConsumerBase(linkAddress, wrapperAddress) {
+        address factoryAddress,
+        address airnodeRrpAddress // 0xC02Ea0f403d5f3D45a4F1d0d817e7A2601346c9E for metis
+    ) RrpRequesterV0(airnodeRrpAddress) {
         require(liquidityVaultAddress != address(0), "liquidityVaultAddress zero");
         bellaLiquidityVaultAddress = liquidityVaultAddress;
         wrappedNativeToken = wrappedNativeTokenAddress;
@@ -94,16 +89,15 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
 
     event MintBellaPoints(address recipient, uint256 pointsAmount);
     event BurnBellaPoints(address from, uint256 pointsAmount);
-    event StartGame(uint256 initialTokenRate);
-    event Bet(uint256 gameId, address user, uint256 totalBetAmt);
-    event DiceRollResult(address user, uint256 gameId);
+    event StartGame(uint256 initialTokenRate, address sponsorWallet);
+    event Bet(bytes32 gameId, address user, uint256 totalBetAmt);
+    event DiceRollResult(address user, bytes32 gameId, int256 result);
     event Redeem(address user, uint256 amount);
     event BellaDeployed(address bellaToken, address bellaV3Pool);
     event DistributeLiquidity(uint256 tokenId);
     event EmergencyWithdraw(address user, uint256 pointsAmount, uint256 withdrawAmt);
-    event EmergencyFulFilledLastBet(address user, uint256 gameId);
-
-    error NotEnoughLINK(uint256 balanceLink, uint256 requiredAmt);
+    event EmergencyFulFilledLastBet(address user, bytes32 gameId);
+    event PurchasePoints(address user, uint256 paymentAmount);
 
     // Modifiers
     modifier shouldGameIsNotOver() {
@@ -122,78 +116,46 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
         _;
     }
 
-    /**
-     * @notice Allows the sending of Ether to the contract to purchase tokens automatically at the current rate.
-     * @dev When Ether is sent to the contract, it calculates the token amount, and wraps the Ether into weth9.
-     */
-    receive() external payable shouldGameIsNotOver {
-        uint256 amount = calculatePointsAmount(msg.value);
-        _mintPoints(msg.sender, amount);
-        IWETH(wrappedNativeToken).deposit{ value: msg.value }();
+    /// @notice Receive ETH and forward to `sponsorWallet`.
+    receive() external payable {
+        require(sponsorWallet != address(0), "sponsorWallet not set");
+        sponsorWallet.transfer(msg.value);
     }
 
     /**
-     * Allow withdraw of Link tokens from the contract
-     */
-    function withdrawLink() external onlyOwner {
-        address(LINK).safeTransfer(owner(), address(LINK).getBalance());
-    }
-
-    /// @notice Sets a new callback gas limit
-    /// @dev Require that the caller must be contract owner
-    /// @param _callbackGasLimit The new gas limit to set for callbacks
-    function setCallbackGasLimit(uint32 _callbackGasLimit) external onlyOwner {
-        callbackGasLimit = _callbackGasLimit;
-    }
-
-    /**
-     * @notice Initializes a new game with a given token rate.
-     * @dev This function sets the initial token rate for a game and starts the countdown for the game period.
-     * It can only be called once as it requires the `initialTokenRate` to be zero and the incoming rate `_initialTokenRate` to be positive.
-     * Also, it ensures that the BellaVault is owned by this contract before proceeding.
-     * The `GAME_PERIOD` constant defines how long the game will last from the point of starting.
-     * Once the requirements are satisfied, the game begins by setting the `initialTokenRate` and `endTime`.
-     * It emits a `StartGame` event upon successful execution.
-     * The `onlyOwner` modifier restricts the function to be callable only by the contract owner.
-     * Reverts if trying to set an initial token rate more than once or if it's not greater than zero,
-     * or if the BellaVault is not owned by this contract.
-     *
-     * @param _initialTokenRate The exchange rate at which the game starts, specified in desired tokens per unit of payment token.
-     * @param deadline A timestamp indicating the deadline by which the game must start.
+     * @notice Starts a new game with specific parameters including sponsor wallet, Airnode details, initial token rate, etc.
+     * @dev Ensures that initialization happens only once and before the provided deadline. Calls `primarySetup` on BellaVault contract
+     * and emits a `StartGame` event after successful execution. Requires non-zero addresses for sponsor and Airnode,
+     * non-zero initial token rate, and game not already started (initialTokenRate == 0).
+     * @param _sponsorWallet The address of the sponsor who will provide funds for the QRNG.
+     * @param _initialTokenRate The initial rate used within the game logic, set at the start and never changed afterward.
+     * @param deadline A timestamp until which the game can be initiated. Prevents starting the game too late.
+     * @custom:modifier onlyOwner Restricts the function's execution to the contract's owner.
+     * @custom:modifier checkDeadline Validates that the function is invoked before the specified deadline.
      */
     function startGame(
+        address _sponsorWallet,
         uint256 _initialTokenRate,
         uint256 deadline
     ) external onlyOwner checkDeadline(deadline) {
+        // Ensure the initial token rate is not already set and the provided initial token rate is positive
         require(initialTokenRate == 0 && _initialTokenRate > 0, "only once");
-        require(
-            IBellaVault(bellaLiquidityVaultAddress).owner() == address(this),
-            "vault not owned by this contract"
+        // Ensure non-zero addresses are provided for sponsor wallet and Airnode
+        require(_sponsorWallet != address(0), "zero address");
+
+        // Perform primary setup in the BellaVault contract
+        IBellaVault(bellaLiquidityVaultAddress).primarySetup(
+            wrappedNativeToken,
+            address(positionManager),
+            _sponsorWallet
         );
-        require(address(LINK).getBalance() > 0, "no LINK");
+
+        // Set Airnode related information and the sponsor wallet to state variables
+        sponsorWallet = payable(_sponsorWallet);
+        // Initialize the initial token rate and calculate the end time based on the current timestamp
         initialTokenRate = _initialTokenRate;
         endTime = block.timestamp + GAME_PERIOD;
-        emit StartGame(_initialTokenRate);
-    }
-
-    /**
-     * @notice Fulfill the last bet of a user in case of an emergency. This action can only be taken by the contract owner.
-     *         It sets the `fulfilled` flag to true, mints points to the user equivalent to their total bet, and then resets the total bet.
-     * @dev This function finds the last game information for the user, checks whether the round exists and if it's unfulfilled,
-     *      marks it as fulfilled, mints points, and sets the total bet to zero.
-     *      Emits the {EmergencyFulFilledLastBet} event upon completion.
-     *      The function requires that the user has at least one unfulfilled game round and that the caller is the contract owner.
-     * @param user The address of the user whose last bet needs to be emergency fulfilled.
-     */
-    function emergencyFulFilledLastBet(address user) external onlyOwner {
-        (uint256 id, GameRound memory mRound) = getUserLastGameInfo(user);
-        require(mRound.user != address(0), "round not found");
-        require(mRound.fulfilled == false, "forbidden");
-        GameRound storage round = gameRounds[id];
-        round.fulfilled = true;
-        _mintPoints(user, round.totalBet);
-        round.totalBet = 0;
-        emit EmergencyFulFilledLastBet(user, id);
+        emit StartGame(_initialTokenRate, _sponsorWallet);
     }
 
     /// @notice Retrieves the balance of a given account
@@ -208,7 +170,7 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     /// @dev Fetches the array of game IDs from `userGameIds` using `.values()`
     /// @param user The address of the user whose game IDs we want to retrieve
     /// @return ids An array of game IDs that the user participated in
-    function getUserGameIds(address user) public view returns (uint256[] memory ids) {
+    function getUserGameIds(address user) public view returns (bytes32[] memory ids) {
         ids = userGameIds[user].values();
     }
 
@@ -227,8 +189,8 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     /// @return round The GameRound struct containing the details of the game round
     function getUserLastGameInfo(
         address user
-    ) public view returns (uint256 id, GameRound memory round) {
-        EnumerableSet.UintSet storage set = userGameIds[user];
+    ) public view returns (bytes32 id, GameRound memory round) {
+        EnumerableSet.Bytes32Set storage set = userGameIds[user];
         uint256 length = set.length();
         if (length > 0) {
             id = set.at(length - 1);
@@ -256,7 +218,7 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     function gameOver() public view returns (bool) {
         uint256 _endTime = endTime;
         require(_endTime > 0, "game not started yet");
-        return block.timestamp > _endTime + 10 minutes;
+        return block.timestamp > _endTime + 2 minutes; //reserve for callback
     }
 
     /**
@@ -267,7 +229,9 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
     function calculatePointsAmount(
         uint256 paymentAmount
     ) public view returns (uint256 purchaseAmount) {
-        purchaseAmount = (paymentAmount * initialTokenRate) / oneNativeToken;
+        if (initialTokenRate > 0) {
+            purchaseAmount = (paymentAmount * initialTokenRate) / oneNativeToken;
+        }
     }
 
     /**
@@ -279,11 +243,13 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
         uint256 desiredPointsAmount
     ) public view returns (uint256 paymentAmount) {
         uint256 _initialTokenRate = initialTokenRate;
-        uint256 intermediate = (desiredPointsAmount * oneNativeToken);
-        paymentAmount = intermediate / _initialTokenRate;
-        //round up
-        if (paymentAmount == 0 || intermediate % _initialTokenRate > 0) {
-            paymentAmount += 1;
+        if (initialTokenRate > 0) {
+            uint256 intermediate = (desiredPointsAmount * oneNativeToken);
+            paymentAmount = intermediate / _initialTokenRate;
+            //round up
+            if (paymentAmount == 0 || intermediate % _initialTokenRate > 0) {
+                paymentAmount += 1;
+            }
         }
     }
 
@@ -322,42 +288,46 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
         sqrtPriceX96 = sqrtPrice.toUint160();
     }
 
-    /// @notice This function allows a user to place a bet if the current game is not over.
-    /// @dev Emits the `Bet` event upon successful execution of the function, burns points from the sender's balance,
-    /// calculates the required LINK for the VRF request, and sets up the new game round.
-    /// The caller of this function should ensure the last game round has been fulfilled.
-    /// Also, the caller must have enough points to cover the total bet amount and the contract must have enough LINK to fulfill the VRF request.
-    /// @param betAmts An array of bet amounts that the user wishes to wager on the next game round.
-    /// Each amount must be greater than zero.
-    /// @return gameId The unique identifier for the game that the bet was placed on.
-    /// @custom:modifier shouldGameIsNotOver Ensures that the game is still ongoing before allowing the bet.
-    function bet(uint256[] memory betAmts) external shouldGameIsNotOver returns (uint256 gameId) {
-        {
-            (, GameRound memory round) = getUserLastGameInfo(msg.sender);
-            require(round.fulfilled || round.totalBet == 0, "last round not fulfilled");
-        }
-        uint32 numWords = uint32(betAmts.length);
+    /// @notice Allows a user to place a bet on a dice roll(s), record the bet details, and request randomness
+    /// @dev Transfers the required ETH to sponsor wallet and creates a new game round with provided bets
+    /// @param betAmts An array of amounts representing individual bets for each roll of the dice
+    /// @return gameId A unique identifier generated for the game round
+    function bet(
+        uint256[] memory betAmts
+    ) external payable shouldGameIsNotOver returns (bytes32 gameId) {
+        // Check if the number of dice rolls is within the permitted range
+        uint256 numWords = betAmts.length;
         require(numWords > 0 && numWords <= MAX_NUM_WORDS, "invalid betAmts");
+        // Calculate the total bet amount from the array of bets
         uint256 totalBetAmt;
-        for (uint i; i < betAmts.length; ) {
+        for (uint i; i < numWords; ) {
+            // Each bet amount must be greater than zero
             require(betAmts[i] > 0, "zero amount");
             totalBetAmt += betAmts[i];
             unchecked {
                 ++i;
             }
         }
+        // Ensure the user has enough points to cover their total bet
+        // It is possible to resend a bid for the same balance,
+        // so this check is also added to the callback function
         require(totalBetAmt <= balanceOf(msg.sender), "points are not enough");
-        _burnPoints(msg.sender, totalBetAmt);
-        {
-            uint256 requiredAmt = VRF_V2_WRAPPER.calculateRequestPrice(callbackGasLimit);
-            uint256 balanceLink = LINK.balanceOf(address(this));
-            if (balanceLink < requiredAmt) {
-                revert NotEnoughLINK(balanceLink, requiredAmt);
-            }
-        }
-
-        gameId = requestRandomness(callbackGasLimit, requestConfirmations, numWords);
-
+        // user needs to send ether with the transaction
+        // user must send enough ether for the callback
+        // otherwise the transaction will fail
+        require(msg.value > 0, "eth is zero");
+        // Request randomness using AirnodeRrp, which will later call the fulfillRandomWords function
+        gameId = airnodeRrp.makeFullRequest(
+            airnode,
+            endpointIdUint256Array,
+            address(this), //sponsor
+            sponsorWallet,
+            address(this), // fulfillAddress
+            this.fulfillRandomWords.selector,
+            // Using Airnode ABI to encode the parameters
+            abi.encode(bytes32("1u"), bytes32("size"), numWords)
+        );
+        // Record the game round details in the contract state
         gameRounds[gameId] = GameRound({
             fulfilled: false,
             user: msg.sender,
@@ -366,9 +336,72 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
             betAmts: betAmts,
             diceRollResult: new uint256[](betAmts.length)
         });
+        // Associate the game ID with the user's address
         userGameIds[msg.sender].add(gameId);
-        lastgameId = gameId;
+
         emit Bet(gameId, msg.sender, totalBetAmt);
+        // Transfer the received Ether to the sponsor's wallet to cover the callback transaction costs
+        sponsorWallet.transfer(msg.value);
+    }
+
+    /// @notice Records the result of dice rolls, updates the game round, and handles payouts
+    /// @dev Requires the caller to be the designated AirnodeRrp address and checks if the round can be fulfilled
+    /// @param _gameId The unique identifier of the game round that the dice roll results correspond to
+    /// @param data Encoded data containing the array of random numbers provided by Airnode RRP
+    function fulfillRandomWords(bytes32 _gameId, bytes calldata data) external onlyAirnodeRrp {
+        // Ensure the game is still active
+        /// @notice Rejects the transaction if the game is over.
+        require(!gameOver(), "game is over");
+        // Retrieve the game round using the _gameId
+        GameRound storage round = gameRounds[_gameId];
+        // Validate the round existence
+        require(round.user != address(0), "round not found");
+        // Ensure the round has not already been fulfilled
+        require(round.fulfilled == false, "already fulfilled");
+        // Check if the user has enough points to cover their bet
+        require(round.totalBet <= balanceOf(round.user), "points are not enough");
+        uint256[] memory _randomWords = abi.decode(data, (uint256[]));
+        uint256 length = _randomWords.length;
+        require(length == round.diceRollResult.length, "invalid randomWords");
+        // Mark the round as fulfilled
+        round.fulfilled = true;
+        uint256 totalWinnings;
+        // Variables specific to a game rule where sum of 2 dice is 9 and the third die is a 6
+        uint256 sum69;
+        bool sixFound;
+        for (uint i; i < length; ) {
+            // Get the dice number between 1 and 6
+            uint256 num = (_randomWords[i] % 6) + 1;
+            // Calculate winnings based on even dice numbers
+            if (num == 2 || num == 4 || num == 6) {
+                totalWinnings += round.betAmts[i] * num;
+            }
+            // Additional game logic for a special condition related to the number 69
+            if (length == 3) {
+                if (num == 6 && !sixFound) {
+                    sixFound = true;
+                } else {
+                    sum69 += num;
+                }
+            }
+            round.diceRollResult[i] = num;
+            unchecked {
+                ++i;
+            }
+        }
+        // Special logic for determining winnings if the special 69 condition is met
+        if (length == 3 && sum69 == 9 && sixFound) {
+            totalWinnings = round.totalBet * WIN69_MULTIPLIER;
+        }
+
+        round.totalWinnings = totalWinnings;
+        // Calculate and mint or burn points based on whether the user won or lost
+        if (totalWinnings > round.totalBet) {
+            _mintPoints(round.user, totalWinnings - round.totalBet);
+        } else if (totalWinnings < round.totalBet) {
+            _burnPoints(round.user, round.totalBet - totalWinnings);
+        }
+        emit DiceRollResult(round.user, _gameId, int256(totalWinnings) - int256(round.totalBet));
     }
 
     /// @notice Deploys Bella token and sets up a corresponding V3 pool.
@@ -471,66 +504,33 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
         // Transfer any remaining Wrapped Native Token balance to the Bella liquidity vault
         weth9Balance = wrappedNativeToken.getBalance();
         wrappedNativeToken.safeTransfer(bellaLiquidityVaultAddress, weth9Balance);
+
+        airnodeRrp.setSponsorshipStatus(bellaLiquidityVaultAddress, true);
         // Initialize the Bella vault with the newly created liquidity position; revert if failed
-        require(
-            IBellaVault(bellaLiquidityVaultAddress).initialize(
-                zeroForBella,
-                address(bellaToken),
-                wrappedNativeToken,
-                address(positionManager),
-                address(bellaV3Pool),
-                tokenId
-            ),
-            "vault initialization failed"
+        IBellaVault(bellaLiquidityVaultAddress).initialize(
+            zeroForBella,
+            address(bellaToken),
+            address(bellaV3Pool),
+            tokenId
         );
         uniPosTokenId = tokenId;
         emit DistributeLiquidity(tokenId);
     }
 
-    /// @notice This function is called as a callback from Chainlink's VRF to provide
-    /// randomness for the game logic and updates the corresponding game round with results.
-    /// @dev Iterates over `_randomWords`, interprets each as a dice roll, calculates winnings,
-    /// and mints reward points if applicable. Emits a `DiceRollResult` event upon completion.
-    /// @param _gameId The unique identifier of the game round to fulfill.
-    /// @param _randomWords An array of random words returned by the VRF callback.
-    /// Each element represents a die roll outcome which is calculated as `(_randomWords[i] % 6) + 1`.
-    /// @custom:require "round not found" The game round must be initiated before it can be fulfilled.
-    /// @custom:require "invalid randomWords" The number of random words provided must match the number
-    /// of dice rolls expected for the round (i.e., the length of `diceRollResult` array in the GameRound struct).
-    function fulfillRandomWords(uint256 _gameId, uint256[] memory _randomWords) internal override {
-        GameRound storage round = gameRounds[_gameId];
-        require(round.user != address(0), "round not found");
-        uint256 length = _randomWords.length;
-        require(length == round.diceRollResult.length, "invalid randomWords");
-        uint256 totalWinnings;
-        uint256 sum69;
-        bool sixFound;
-        for (uint i; i < length; ) {
-            uint256 num = (_randomWords[i] % 6) + 1;
-            if (num == 2 || num == 4 || num == 6) {
-                totalWinnings += round.betAmts[i] * num;
-            }
-            if (length == 3) {
-                if (num == 6 && !sixFound) {
-                    sixFound = true;
-                } else {
-                    sum69 += num;
-                }
-            }
-            round.diceRollResult[i] = num;
-            unchecked {
-                ++i;
-            }
-        }
-        if (length == 3 && sum69 == 9 && sixFound) {
-            totalWinnings = round.totalBet * WIN69_MULTIPLIER;
-        }
-
-        round.totalWinnings = totalWinnings;
-        round.fulfilled = true;
-        _mintPoints(round.user, totalWinnings);
-
-        emit DiceRollResult(round.user, _gameId);
+    /**
+     * @notice Purchase game points by sending ETH to this function.
+     * @dev The desired amount of game points is specified as an argument. This value is compared
+     * with the calculated amount from `calculatePointsAmount`. It mints the points and wraps the ETH
+     * into WETH after validating that the desired amount is correct.
+     * @param desiredAmountOut The exact amount of game points the user wishes to receive.
+     * Requires that the calculated amount of points equals the desired amount.
+     */
+    function purchasePointsEth(uint256 desiredAmountOut) external payable shouldGameIsNotOver {
+        uint256 out = calculatePointsAmount(msg.value);
+        require(desiredAmountOut == out, "invalid amount");
+        _mintPoints(msg.sender, desiredAmountOut);
+        IWETH(wrappedNativeToken).deposit{ value: msg.value }();
+        emit PurchasePoints(msg.sender, msg.value);
     }
 
     /**
@@ -541,6 +541,7 @@ contract BellaDiceGame is VRFV2WrapperConsumerBase, Ownable {
         _mintPoints(msg.sender, desiredAmountOut);
         uint256 paymentAmount = calculatePaymentAmount(desiredAmountOut);
         wrappedNativeToken.safeTransferFrom(msg.sender, address(this), paymentAmount);
+        emit PurchasePoints(msg.sender, paymentAmount);
     }
 
     /// @notice Redeem points for Bella tokens.
