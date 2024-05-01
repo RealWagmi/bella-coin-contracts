@@ -10,6 +10,7 @@
         "test:coverage": "npx hardhat coverage  --testfiles 'test/*.ts'",
         "deploy": "npx hardhat run ./scripts/deploy.ts --network $npm_config_network",
         "play": "npx hardhat run ./scripts/play.ts --network $npm_config_network",
+        "pump": "npx hardhat run ./scripts/pump.ts --network $npm_config_network",
         "size": "npx hardhat size-contracts",
         "lint": "prettier --list-different --plugin=prettier-plugin-solidity 'contracts/**/*.sol' && prettier --list-different 'scripts/**/*.ts' && prettier --list-different 'test/**/*.ts'",
         "lint-fix": "prettier --write --plugin=prettier-plugin-solidity 'contracts/**/*.sol' && prettier --write 'scripts/**/*.ts' && prettier --write 'test/**/*.ts'"

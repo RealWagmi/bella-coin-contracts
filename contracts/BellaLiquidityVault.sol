@@ -136,7 +136,7 @@ contract BellaLiquidityVault is RrpRequesterV0, Ownable, ERC721Holder {
         bytes32 requestId = airnodeRrp.makeFullRequest(
             airnode,
             endpointIdUint256,
-            address(this),
+            owner(),
             sponsorWallet,
             address(this),
             this.fulfillRandomWords.selector,

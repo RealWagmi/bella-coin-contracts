@@ -36,7 +36,8 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     uint256 public constant GAME_PERIOD = 10 days;
     uint256 public constant maxWaitingTime = 7 days;
     uint256 public constant CALLBACK_GAS = 300000;
-    // Cannot exceed VRFV2Wrapper.getConfig().maxNumWords.
+    uint16 public constant observationCardinalityNext = 150;
+
     uint256 public constant MAX_NUM_WORDS = 3;
 
     uint24 public constant bellaPoolV3feeTiers = 10000;
@@ -224,7 +225,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     function gameOver() public view returns (bool) {
         uint256 _endTime = endTime;
         require(_endTime > 0, "game not started yet");
-        return block.timestamp > _endTime + 2 minutes; //reserve for callback
+        return block.timestamp > _endTime + 3 minutes; //reserve for callback
     }
 
     /**
@@ -357,6 +358,9 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     /// @dev Requires the caller to be the designated AirnodeRrp address and checks if the round can be fulfilled
     /// @param _gameId The unique identifier of the game round that the dice roll results correspond to
     /// @param data Encoded data containing the array of random numbers provided by Airnode RRP
+    ///  Using the QRNG service is free, meaning there is no subscription fee to pay.
+    /// There is a gas cost incurred on-chain when Airnode places the random number on-chain in response to a request,
+    /// which the requester needs to pay for.
     function fulfillRandomWords(bytes32 _gameId, bytes calldata data) external onlyAirnodeRrp {
         // Ensure the game is still active
         /// @notice Rejects the transaction if the game is over.
@@ -472,7 +476,9 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
      */
     function distributeLiquidity() external {
         require(address(bellaToken) != address(0), "call deployBella() first");
-
+        require(uniPosTokenId == 0, "liquidity already distributed");
+        // Increase the observation cardinality for the Bella pool
+        bellaV3Pool.increaseObservationCardinalityNext(observationCardinalityNext);
         // Determine the ordering of token addresses for Bella and Wrapped Native Token
         bool zeroForBella = address(bellaToken) < wrappedNativeToken;
         address token0 = zeroForBella ? address(bellaToken) : wrappedNativeToken;
@@ -523,6 +529,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
             tokenId
         );
         uniPosTokenId = tokenId;
+
         emit DistributeLiquidity(tokenId);
     }
 
