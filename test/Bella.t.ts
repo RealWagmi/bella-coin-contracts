@@ -296,7 +296,9 @@ describe("Bella Dice Game", function () {
     it("should revert if there is not ETH to fulfill the QRNG request", async function () {
       const betAmts = [ethers.parseEther("1"), ethers.parseEther("1"), ethers.parseEther("1")];
       // Attempt to place a bet and expect failure due to not ETH to fulfill the QRNG request
-      await expect(game.connect(alice).bet(betAmts)).to.be.revertedWith("eth is zero");
+      await expect(game.connect(alice).bet(betAmts))
+        .to.be.revertedWithCustomError(game, "AmountOfEthSentIsTooSmall(uint256 sent,uint256  minimum)")
+        .withArgs(0, anyValue);
       // Replenish the LINK balance
     });
 

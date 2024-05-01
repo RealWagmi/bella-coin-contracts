@@ -35,6 +35,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     uint256 public constant WIN69_MULTIPLIER = 10;
     uint256 public constant GAME_PERIOD = 10 days;
     uint256 public constant maxWaitingTime = 7 days;
+    uint256 public constant CALLBACK_GAS = 300000;
     // Cannot exceed VRFV2Wrapper.getConfig().maxNumWords.
     uint256 public constant MAX_NUM_WORDS = 3;
 
@@ -99,6 +100,8 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     event EmergencyFulFilledLastBet(address user, bytes32 gameId);
     event PurchasePoints(address user, uint256 paymentAmount);
 
+    error AmountOfEthSentIsTooSmall(uint256 sent, uint256 minimum);
+
     // Modifiers
     modifier shouldGameIsNotOver() {
         require(gameNotOver(), "game over");
@@ -137,7 +140,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         address _sponsorWallet,
         uint256 _initialTokenRate,
         uint256 deadline
-    ) external onlyOwner checkDeadline(deadline) {
+    ) external payable onlyOwner checkDeadline(deadline) {
         // Ensure the initial token rate is not already set and the provided initial token rate is positive
         require(initialTokenRate == 0 && _initialTokenRate > 0, "only once");
         // Ensure non-zero addresses are provided for sponsor wallet and Airnode
@@ -155,6 +158,9 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         // Initialize the initial token rate and calculate the end time based on the current timestamp
         initialTokenRate = _initialTokenRate;
         endTime = block.timestamp + GAME_PERIOD;
+        if (msg.value > 0) {
+            sponsorWallet.transfer(msg.value);
+        }
         emit StartGame(_initialTokenRate, _sponsorWallet);
     }
 
@@ -315,7 +321,10 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         // user needs to send ether with the transaction
         // user must send enough ether for the callback
         // otherwise the transaction will fail
-        require(msg.value > 0, "eth is zero");
+        uint256 minimumSend = tx.gasprice * CALLBACK_GAS;
+        if (msg.value < minimumSend) {
+            revert AmountOfEthSentIsTooSmall(msg.value, minimumSend);
+        }
         // Request randomness using AirnodeRrp, which will later call the fulfillRandomWords function
         gameId = airnodeRrp.makeFullRequest(
             airnode,

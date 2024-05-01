@@ -19,6 +19,7 @@ contract BellaLiquidityVault is RrpRequesterV0, Ownable, ERC721Holder {
     uint32 public constant twapDuration = 10 minutes;
     uint256 public constant twapDeviation = 300; // 3%
     uint256 public constant pumpInterval = 7 days;
+    uint256 public constant CALLBACK_GAS = 300000;
     uint256 public constant emergencyPumpInterval = 180 days;
     uint160 internal constant MIN_SQRT_RATIO_ADD_ONE = 4295128740;
     uint160 internal constant MAX_SQRT_RATIO_SUB_ONE =
@@ -48,6 +49,7 @@ contract BellaLiquidityVault is RrpRequesterV0, Ownable, ERC721Holder {
     event TryToEnablePump(bytes32 requestId);
 
     error PriceDeviationTooHigh(uint256 deviation);
+    error AmountOfEthSentIsTooSmall(uint256 sent, uint256 minimum);
 
     receive() external payable {
         IWETH(wrappedNativeTokenAddress).deposit{ value: msg.value }();
@@ -126,7 +128,10 @@ contract BellaLiquidityVault is RrpRequesterV0, Ownable, ERC721Holder {
         require(isTimeToPump(), "too early to enable pump");
         // require(!airnodeRrp.requestIsAwaitingFulfillment(lastRrequestId), "request pending");
 
-        require(msg.value > 0, "eth is zero");
+        uint256 minimumSend = tx.gasprice * CALLBACK_GAS;
+        if (msg.value < minimumSend) {
+            revert AmountOfEthSentIsTooSmall(msg.value, minimumSend);
+        }
 
         bytes32 requestId = airnodeRrp.makeFullRequest(
             airnode,
@@ -143,11 +148,6 @@ contract BellaLiquidityVault is RrpRequesterV0, Ownable, ERC721Holder {
         sponsorWallet.transfer(msg.value);
 
         //subscribe to the AirnodeRrpV0 contract event FailedRequest(airnode, requestId, errorMessage) to identify the error
-    }
-
-    /// @notice To withdraw funds from the sponsor wallet to the contract.
-    function withdrawEth() external {
-        airnodeRrp.requestWithdrawal(airnode, sponsorWallet);
     }
 
     /**

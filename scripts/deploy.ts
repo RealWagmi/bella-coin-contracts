@@ -18,6 +18,7 @@ async function main() {
   let WETH_ADDRESS = "";
   let UNDERLYING_POSITION_MANAGER_ADDRESS = "";
   let UNISWAP_V3_FACTORY = "";
+  let SEND_VALUE;
 
   if (network === "metis") {
     //https://docs.api3.org/reference/qrng/chains.html#anu
@@ -26,6 +27,7 @@ async function main() {
     UNDERLYING_POSITION_MANAGER_ADDRESS = "0xA7E119Cf6c8f5Be29Ca82611752463f0fFcb1B02";
     UNISWAP_V3_FACTORY = "0x8112E18a34b63964388a3B2984037d6a2EFE5B8A";
     WETH_ADDRESS = "0x75cb093E4D61d2A2e65D8e0BBb01DE8d89b53481"; //WMETIS 18
+    SEND_VALUE = ethers.parseEther("0.15");
   }
 
   const BellaLiquidityVaultFactory = await ethers.getContractFactory("BellaLiquidityVault");
@@ -79,7 +81,7 @@ async function main() {
   await sleep(1000);
   console.log("starting game...", deadline);
   const initialTokenRate = ethers.parseUnits("1000", 18); // 1000 Bella per WETH
-  await diceGame.startGame(sponsorWalletAddress, initialTokenRate, deadline);
+  await diceGame.startGame(sponsorWalletAddress, initialTokenRate, deadline, { value: SEND_VALUE });
 
   console.log("game started!");
 
