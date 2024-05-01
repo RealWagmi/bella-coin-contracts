@@ -50,7 +50,7 @@ const config: HardhatUserConfig = {
     disambiguatePaths: false,
     runOnCompile: true,
     strict: true,
-    only: ["BellaDiceGame", "BellaLiquidityVault"],
+    only: ["BellaDiceGame"],
   },
   paths: {
     sources: './contracts',
@@ -68,7 +68,7 @@ const config: HardhatUserConfig = {
           evmVersion: 'paris',
           optimizer: {
             enabled: true,
-            runs: 1_000,
+            runs: 333,
           },
           metadata: {
             bytecodeHash: 'none',

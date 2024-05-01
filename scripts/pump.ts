@@ -11,17 +11,17 @@ async function main() {
 
     console.log(`[${network}] deployer address: ${deployer.address}`);
 
-    const vault = await ethers.getContractAt("BellaLiquidityVault", "0x9ADCAECd79Ef2045D7CCb264FaA13e7733Ccb5e1");
-    const isTimeToPump = await vault.isTimeToPump();
+    const bella = await ethers.getContractAt("BellaToken", "0x9ADC...");
+    const isTimeToPump = await bella.isTimeToPump();
     console.log("isTimeToPump", isTimeToPump);
     await sleep(1000);
-    const pumpEnabled = await vault.pumpEnabled();
+    const pumpEnabled = await bella.pumpEnabled();
     console.log("pumpEnabled", pumpEnabled);
     await sleep(1000);
     if (pumpEnabled) {
-        await vault.pump();
+        await bella.pump();
     } else if (isTimeToPump) {
-        await vault.tryToEnablePump({ value: ethers.parseEther("0.005") });
+        await bella.tryToEnablePump({ value: ethers.parseEther("0.005") });
     }
 
     console.log("done!");

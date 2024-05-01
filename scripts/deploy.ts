@@ -10,8 +10,6 @@ async function main() {
   const [deployer] = await ethers.getSigners();
   const network = hardhat.network.name;
 
-
-
   console.log(`[${network}] deployer address: ${deployer.address}`);
 
   let AirnodeRrpV0Address = "";
@@ -30,19 +28,9 @@ async function main() {
     SEND_VALUE = ethers.parseEther("0.15");
   }
 
-  const BellaLiquidityVaultFactory = await ethers.getContractFactory("BellaLiquidityVault");
-  const vault = await BellaLiquidityVaultFactory.deploy(AirnodeRrpV0Address);
-  await vault.waitForDeployment();
-  const vaultAddress = await vault.getAddress();
-
-  await sleep(10000);
-
-  console.log(`BellaLiquidityVault  deployed to ${vaultAddress}`);
-
   const BellaDiceGameFactory = await ethers.getContractFactory("BellaDiceGame");
   const diceGame = await BellaDiceGameFactory.deploy(
     WETH_ADDRESS,
-    vaultAddress,
     UNDERLYING_POSITION_MANAGER_ADDRESS,
     UNISWAP_V3_FACTORY,
     AirnodeRrpV0Address
@@ -51,10 +39,6 @@ async function main() {
   const diceGameAddress = await diceGame.getAddress();
 
   console.log(`BellaDiceGame  deployed to ${diceGameAddress}`);
-
-  await sleep(10000);
-  await vault.transferOwnership(diceGameAddress);
-  console.log("Ownership of BellaLiquidityVault transferred to BellaDiceGame");
 
   await sleep(30000);
 
@@ -73,9 +57,6 @@ async function main() {
 
   await sleep(10000);
 
-  // const diceGame = await ethers.getContractAt("BellaDiceGame", "0x5Cb58CEDE5C98B87bEdbF03A66EB25A6597fA3D0");
-  // const sponsorWalletAddress = "0x37402cE2CeC1C71588944cCb8aa2Aa25528B8D6E";
-
   const latestBlock = (await hardhat.network.provider.send("eth_getBlockByNumber", ["latest", false])) as { timestamp: string };
   const deadline = parseInt(latestBlock.timestamp, 16) + 120;
   await sleep(1000);
@@ -85,22 +66,18 @@ async function main() {
 
   console.log("game started!");
 
-  // await hardhat.run("verify:verify", {
-  //   address: vaultAddress,
-  //   constructorArguments: [AirnodeRrpV0Address],
-  // });
-  // await sleep(5000);
 
-  // await hardhat.run("verify:verify", {
-  //   address: diceGameAddress,
-  //   constructorArguments: [
-  //     WETH_ADDRESS,
-  //     vaultAddress,
-  //     UNDERLYING_POSITION_MANAGER_ADDRESS,
-  //     UNISWAP_V3_FACTORY,
-  //     AirnodeRrpV0Address,
-  //   ],
-  // });
+  await sleep(30000);
+
+  await hardhat.run("verify:verify", {
+    address: diceGameAddress,
+    constructorArguments: [
+      WETH_ADDRESS,
+      UNDERLYING_POSITION_MANAGER_ADDRESS,
+      UNISWAP_V3_FACTORY,
+      AirnodeRrpV0Address,
+    ],
+  });
 
   console.log("done!");
   process.exit(0);
