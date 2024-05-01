@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
-import { RrpRequesterV0 } from "@api3/airnode-protocol/contracts/rrp/requesters/RrpRequesterV0.sol";
+import { IAirnodeRrpV0 } from "@api3/airnode-protocol/contracts/rrp/interfaces/IAirnodeRrpV0.sol";
 import { IBella } from "./interfaces/IBella.sol";
 import { INonfungiblePositionManager } from "./interfaces/uniswap/INonfungiblePositionManager.sol";
 import { IUniswapV3Pool } from "./interfaces/uniswap/IUniswapV3Pool.sol";
@@ -11,8 +11,10 @@ import { IWETH } from "./interfaces/IWETH.sol";
 import { TickMath } from "./vendor0.8/uniswap/TickMath.sol";
 import { FullMath } from "./vendor0.8/uniswap/FullMath.sol";
 
-contract BellaLiquidityVault is RrpRequesterV0, Ownable, ERC721Holder {
+contract BellaLiquidityVault is Ownable, ERC721Holder {
     using TransferHelper for address;
+
+    IAirnodeRrpV0 public immutable airnodeRrp;
 
     uint256 public constant BP = 10_000;
     uint256 public constant PUMP_BPS = 2500; // 25%
@@ -42,7 +44,17 @@ contract BellaLiquidityVault is RrpRequesterV0, Ownable, ERC721Holder {
     uint256 public posTokenId;
     mapping(bytes32 => bool) public pendingRequestIds;
 
-    constructor(address airnodeRrpAddress) RrpRequesterV0(airnodeRrpAddress) {}
+    constructor(address airnodeRrpAddress) {
+        airnodeRrp = IAirnodeRrpV0(airnodeRrpAddress);
+    }
+
+    /// @dev Reverts if the caller is not the Airnode RRP contract.
+    /// Use it as a modifier for fulfill and error callback methods, but also
+    /// check `requestId`.
+    modifier onlyAirnodeRrp() {
+        require(msg.sender == address(airnodeRrp), "Caller not Airnode RRP");
+        _;
+    }
 
     event Pump(uint256 pampAmt, uint256 burnAmt);
     event PumpEnabled(bool enabled, bytes32 requestId);
