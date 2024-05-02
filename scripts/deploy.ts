@@ -5,7 +5,6 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-
 async function main() {
   const [deployer] = await ethers.getSigners();
   const network = hardhat.network.name;
@@ -57,7 +56,9 @@ async function main() {
 
   await sleep(10000);
 
-  const latestBlock = (await hardhat.network.provider.send("eth_getBlockByNumber", ["latest", false])) as { timestamp: string };
+  const latestBlock = (await hardhat.network.provider.send("eth_getBlockByNumber", ["latest", false])) as {
+    timestamp: string;
+  };
   const deadline = parseInt(latestBlock.timestamp, 16) + 120;
   await sleep(1000);
   console.log("starting game...", deadline);
@@ -66,17 +67,11 @@ async function main() {
 
   console.log("game started!");
 
-
   await sleep(30000);
 
   await hardhat.run("verify:verify", {
     address: diceGameAddress,
-    constructorArguments: [
-      WETH_ADDRESS,
-      UNDERLYING_POSITION_MANAGER_ADDRESS,
-      UNISWAP_V3_FACTORY,
-      AirnodeRrpV0Address,
-    ],
+    constructorArguments: [WETH_ADDRESS, UNDERLYING_POSITION_MANAGER_ADDRESS, UNISWAP_V3_FACTORY, AirnodeRrpV0Address],
   });
 
   console.log("done!");

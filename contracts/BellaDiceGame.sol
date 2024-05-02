@@ -18,23 +18,22 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         uint256[] diceRollResult;
     }
 
+    string public constant name = "Bella Game Points";
+    string public constant symbol = "BGP";
     uint8 public constant decimals = 18;
+    uint16 public constant observationCardinalityNext = 150;
+    uint24 public constant BELLA_V3_FEE_TIERS = 10000;
+    int24 public constant BELLA_V3_TICK_SPACING = 200;
     uint256 public constant WIN69_MULTIPLIER = 10;
     uint256 public constant GAME_PERIOD = 10 days;
-    uint256 public constant reserveForcallback = 3 minutes;
-    uint256 public constant CALLBACK_GAS = 300000;
-    uint16 public constant observationCardinalityNext = 150;
-
+    uint256 public constant CALLBACK_RESERVE_TIME = 3 minutes;
+    uint256 public constant CALLBACK_GAS = 200000;
     uint256 public constant MAX_NUM_WORDS = 3;
+    uint256 public constant DELIMITER = 1e18;
 
-    uint24 public constant bellaPoolV3feeTiers = 10000;
-    int24 public constant bellaPoolV3TickSpacing = 200;
     address public constant airnode = 0x9d3C147cA16DB954873A498e0af5852AB39139f2; // The address of the QRNG Airnode
     bytes32 public constant endpointIdUint256Array =
         0x27cc2713e7f968e4e86ed274a051a5c8aaee9cca66946f23af6f29ecea9704c3;
-    string public constant name = "Bella Game Points";
-    string public constant symbol = "BGP";
-    uint256 public constant delimiter = 1e18;
 
     /// @notice Wrapped native token on current network
     address public immutable wrappedNativeToken;
@@ -203,7 +202,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     function gameOver() public view returns (bool) {
         uint256 _endTime = endTime;
         _checkZero(_endTime);
-        return block.timestamp > _endTime + reserveForcallback;
+        return block.timestamp > _endTime + CALLBACK_RESERVE_TIME;
     }
 
     /**
@@ -215,7 +214,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         uint256 paymentAmount
     ) public view returns (uint256 purchaseAmount) {
         if (initialTokenRate > 0) {
-            purchaseAmount = (paymentAmount * initialTokenRate) / delimiter;
+            purchaseAmount = (paymentAmount * initialTokenRate) / DELIMITER;
         }
     }
 
@@ -229,7 +228,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     ) public view returns (uint256 paymentAmount) {
         uint256 _initialTokenRate = initialTokenRate;
         if (initialTokenRate > 0) {
-            uint256 intermediate = (desiredPointsAmount * delimiter);
+            uint256 intermediate = (desiredPointsAmount * DELIMITER);
             paymentAmount = intermediate / _initialTokenRate;
             //round up
             if (paymentAmount == 0 || intermediate % _initialTokenRate > 0) {
@@ -422,7 +421,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     function deployBella() external shouldGameIsOver {
         require(address(bellaToken) == address(0), "already deployed");
         address _wrappedNativeToken = wrappedNativeToken;
-        uint24 _bellaPoolV3feeTiers = bellaPoolV3feeTiers;
+        uint24 _bellaPoolV3feeTiers = BELLA_V3_FEE_TIERS;
 
         address _bellaToken = computeBellaAddress(msg.sender);
         address _bellaV3Pool = factory.getPool(
@@ -502,7 +501,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
             INonfungiblePositionManager.MintParams({
                 token0: token0,
                 token1: token1,
-                fee: bellaPoolV3feeTiers,
+                fee: BELLA_V3_FEE_TIERS,
                 tickLower: tickLower,
                 tickUpper: tickUpper,
                 amount0Desired: amount0,
@@ -595,7 +594,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     /**
      * @dev Calculates the full tick range based on the tick spacing of the Bella pool.
      *      The result is the widest valid tick range that can be used for creating a position
-     *      on Uniswap v3. This function assumes that `bellaPoolV3TickSpacing` is set to the
+     *      on Uniswap v3. This function assumes that `BELLA_V3_TICK_SPACING` is set to the
      *      tick spacing of the Bella pool in which this contract will interact.
      *
      * @return tickLower The lower end of the calculated tick range, aligned with the allowable tick spacing.
@@ -603,7 +602,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
      */
     function _getFullTickRange() private pure returns (int24 tickLower, int24 tickUpper) {
         unchecked {
-            int24 tickSpacing = bellaPoolV3TickSpacing;
+            int24 tickSpacing = BELLA_V3_TICK_SPACING;
             tickLower = (TickMath.MIN_TICK / tickSpacing) * tickSpacing;
             tickUpper = (TickMath.MAX_TICK / tickSpacing) * tickSpacing;
         }

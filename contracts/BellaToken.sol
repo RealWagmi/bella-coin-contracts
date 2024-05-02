@@ -14,16 +14,13 @@ import { FullMath } from "./vendor0.8/uniswap/FullMath.sol";
 contract BellaToken is ERC20, Ownable, ERC721Holder {
     using TransferHelper for address;
 
-    uint32 public constant twapDuration = 10 minutes;
-    uint256 public constant twapDeviation = 300; // 3%
+    uint32 public constant TWAP_DURATION = 10 minutes;
+    uint256 public constant TWAP_DEVIATION = 300; // 3%
     uint256 public constant BP = 10_000;
     uint256 public constant PUMP_BPS = 2500; // 25%
-    uint256 public constant pumpInterval = 7 days;
-    uint256 public constant CALLBACK_GAS = 300000;
-    uint256 public constant emergencyPumpInterval = 180 days;
-    uint160 private constant MIN_SQRT_RATIO_ADD_ONE = 4295128740;
-    uint160 private constant MAX_SQRT_RATIO_SUB_ONE =
-        1461446703485210103287273052203988822378723970341;
+    uint256 public constant PUMP_INTERVAL = 7 days;
+    uint256 public constant CALLBACK_GAS = 200000;
+    uint256 public constant EMERGENCY_PUMP_INTERVAL = 180 days;
 
     IAirnodeRrpV0 public immutable airnodeRrp;
 
@@ -101,12 +98,12 @@ contract BellaToken is ERC20, Ownable, ERC721Holder {
 
     /// @notice Determines if the current time is past the required interval to activate the pump.
     function isTimeToPump() public view returns (bool) {
-        return block.timestamp > pumpLastTimestamp + pumpInterval;
+        return block.timestamp > pumpLastTimestamp + PUMP_INTERVAL;
     }
 
     /// @notice Determines if the current time allows for an emergency activation of the pump.
     function isTimeToEmergencyEnablePump() public view returns (bool) {
-        return block.timestamp > pumpLastTimestamp + emergencyPumpInterval;
+        return block.timestamp > pumpLastTimestamp + EMERGENCY_PUMP_INTERVAL;
     }
 
     /**
@@ -208,7 +205,7 @@ contract BellaToken is ERC20, Ownable, ERC721Holder {
                 address(this), //recipient
                 zeroForTokenIn,
                 int256(pampAmt),
-                zeroForTokenIn ? MIN_SQRT_RATIO_ADD_ONE : MAX_SQRT_RATIO_SUB_ONE,
+                zeroForTokenIn ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1,
                 new bytes(0)
             );
 
@@ -237,16 +234,16 @@ contract BellaToken is ERC20, Ownable, ERC721Holder {
     function _checkPriceDeviation() private view returns (int24 currentTick) {
         (, currentTick, , , , , ) = bellaV3Pool.slot0();
         uint32[] memory secondsAgo = new uint32[](2);
-        secondsAgo[0] = twapDuration;
+        secondsAgo[0] = TWAP_DURATION;
         secondsAgo[1] = 0;
 
         (int56[] memory tickCumulatives, ) = bellaV3Pool.observe(secondsAgo);
-        int56 twapDurationInt56 = int56(uint56(twapDuration));
+        int56 TWAP_DURATIONInt56 = int56(uint56(TWAP_DURATION));
 
         int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
-        int24 avarageTick = int24(tickCumulativesDelta / twapDurationInt56);
+        int24 avarageTick = int24(tickCumulativesDelta / TWAP_DURATIONInt56);
 
-        if (tickCumulativesDelta < 0 && (tickCumulativesDelta % twapDurationInt56 != 0))
+        if (tickCumulativesDelta < 0 && (tickCumulativesDelta % TWAP_DURATIONInt56 != 0))
             avarageTick--;
 
         uint256 deviationBps = _getPriceDiviation(
@@ -254,7 +251,7 @@ contract BellaToken is ERC20, Ownable, ERC721Holder {
             TickMath.getSqrtRatioAtTick(avarageTick)
         );
 
-        if (deviationBps > twapDeviation) {
+        if (deviationBps > TWAP_DEVIATION) {
             revert PriceDeviationTooHigh(deviationBps);
         }
     }

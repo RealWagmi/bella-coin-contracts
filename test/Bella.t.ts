@@ -72,7 +72,6 @@ describe("Bella Dice Game", function () {
     weth9.connect(alice).deposit({ value: ethers.parseUnits("1000000", 18) });
     weth9.connect(bob).deposit({ value: ethers.parseUnits("1000000", 18) });
 
-
     const BellaDiceGameFactory = await ethers.getContractFactory("BellaDiceGame");
     game = (await BellaDiceGameFactory.deploy(
       WETH_ADDRESS,
@@ -104,7 +103,6 @@ describe("Bella Dice Game", function () {
   });
 
   describe("Start the game and purchase BellaPoints", function () {
-
     it("should revert purchase Bella points if the game is not started", async function () {
       await expect(game.purchasePoints(1)).to.be.revertedWith("is zero");
       // Attempt to send ETH to the contract, which should fail
@@ -322,9 +320,7 @@ describe("Bella Dice Game", function () {
       const randomWords = [123, 456, 789];
       const data = ethers.AbiCoder.defaultAbiCoder().encode(["uint256[]"], [randomWords]);
 
-      await expect(game.connect(airnodeRrpV0).fulfillRandomWords(invalidGameId, data)).to.be.revertedWith(
-        "r-n-f"
-      );
+      await expect(game.connect(airnodeRrpV0).fulfillRandomWords(invalidGameId, data)).to.be.revertedWith("r-n-f");
     });
 
     it("should calculate winnings correctly", async function () {
@@ -480,9 +476,7 @@ describe("Bella Dice Game", function () {
 
     it("Should revert if tryToEnablePump called too early", async () => {
       const callbackGasPayment = ethers.parseEther("0.001");
-      await expect(bella.connect(alice).tryToEnablePump({ value: callbackGasPayment })).to.be.revertedWith(
-        "too early"
-      );
+      await expect(bella.connect(alice).tryToEnablePump({ value: callbackGasPayment })).to.be.revertedWith("too early");
     });
 
     it("should revert if pump() is called when it is not enabled", async function () {
@@ -491,9 +485,9 @@ describe("Bella Dice Game", function () {
 
     it("should enable pump when conditions are met", async () => {
       let currentTimestamp = await time.latest();
-      const pumpInterval = await bella.pumpInterval();
+      const PUMP_INTERVAL = await bella.PUMP_INTERVAL();
 
-      await mineUpTo(BigInt(currentTimestamp) + pumpInterval);
+      await mineUpTo(BigInt(currentTimestamp) + PUMP_INTERVAL);
 
       expect(await bella.isTimeToPump()).to.be.equal(true);
 
