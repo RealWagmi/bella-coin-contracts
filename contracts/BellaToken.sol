@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
-import "@openzeppelin/contracts/access/Ownable.sol";
+
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import { IAirnodeRrpV0 } from "@api3/airnode-protocol/contracts/rrp/interfaces/IAirnodeRrpV0.sol";
@@ -11,7 +11,7 @@ import { IWETH } from "./interfaces/IWETH.sol";
 import { TickMath } from "./vendor0.8/uniswap/TickMath.sol";
 import { FullMath } from "./vendor0.8/uniswap/FullMath.sol";
 
-contract BellaToken is ERC20, Ownable, ERC721Holder {
+contract BellaToken is ERC20, ERC721Holder {
     using TransferHelper for address;
 
     uint32 public constant TWAP_DURATION = 10 minutes;
@@ -23,6 +23,7 @@ contract BellaToken is ERC20, Ownable, ERC721Holder {
     uint256 public constant EMERGENCY_PUMP_INTERVAL = 180 days;
 
     IAirnodeRrpV0 public immutable airnodeRrp;
+    address public immutable bellaDGAddress;
 
     bool public zeroForTokenIn;
     address public wrappedNativeTokenAddress;
@@ -50,6 +51,7 @@ contract BellaToken is ERC20, Ownable, ERC721Holder {
         wrappedNativeTokenAddress = _wrappedNativeTokenAddress;
         positionManager = INonfungiblePositionManager(_positionManagerAddress);
         sponsorWallet = payable(_sponsorWallet);
+        bellaDGAddress = msg.sender;
     }
 
     event Pump(uint256 pampAmt, uint256 burnAmt);
@@ -67,11 +69,16 @@ contract BellaToken is ERC20, Ownable, ERC721Holder {
         _;
     }
 
+    modifier onlyBellaDiceGame() {
+        require(msg.sender == bellaDGAddress, "f");
+        _;
+    }
+
     receive() external payable {
         IWETH(wrappedNativeTokenAddress).deposit{ value: msg.value }();
     }
 
-    function mint(address account, uint256 amount) external onlyOwner {
+    function mint(address account, uint256 amount) external onlyBellaDiceGame {
         _mint(account, amount);
     }
 
@@ -89,7 +96,7 @@ contract BellaToken is ERC20, Ownable, ERC721Holder {
         bool zeroForBella,
         address bellaV3PoolAddress,
         uint256 tokenId
-    ) external onlyOwner {
+    ) external onlyBellaDiceGame {
         bellaV3Pool = IUniswapV3Pool(bellaV3PoolAddress);
         posTokenId = tokenId;
         zeroForTokenIn = !zeroForBella;
@@ -137,7 +144,7 @@ contract BellaToken is ERC20, Ownable, ERC721Holder {
         bytes32 requestId = airnodeRrp.makeFullRequest(
             airnode,
             endpointIdUint256,
-            owner(),
+            bellaDGAddress, //sponsor
             sponsorWallet,
             address(this),
             this.fulfillRandomWords.selector,
