@@ -272,14 +272,10 @@ contract BellaToken is ERC20, ERC721Holder {
         uint256 ratioDeviation = ratio > ratioAvg
             ? uint256(ratio - ratioAvg)
             : uint256(ratioAvg - ratio);
-        deviationBps = (ratioDeviation * BP) / ratioAvg;
+        deviationBps = FullMath.mulDiv(ratioDeviation, BP, ratioAvg);
     }
 
     function _getRatio(uint160 sqrtPrice) private pure returns (uint256 ratio) {
-        if (sqrtPrice <= type(uint128).max) {
-            ratio = uint256(sqrtPrice) * sqrtPrice;
-        } else {
-            ratio = FullMath.mulDiv(sqrtPrice, sqrtPrice, 1 << 64);
-        }
+        ratio = FullMath.mulDiv(sqrtPrice, sqrtPrice, 1 << 64);
     }
 }
