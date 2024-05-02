@@ -10,7 +10,7 @@ async function main() {
 
   console.log(`[${network}] deployer address: ${deployer.address}`);
 
-  const bella = await ethers.getContractAt("BellaToken", "0x9ADC...");
+  const bella = await ethers.getContractAt("BellaToken", "0x9bedfe60F093f8889C27B70640dD9CAD7F53EB6c");
   const isTimeToPump = await bella.isTimeToPump();
   console.log("isTimeToPump", isTimeToPump);
   await sleep(1000);
@@ -20,7 +20,7 @@ async function main() {
   if (pumpEnabled) {
     await bella.pump();
   } else if (isTimeToPump) {
-    await bella.tryToEnablePump({ value: ethers.parseEther("0.005") });
+    await bella.tryToEnablePump({ value: ethers.parseEther("0.003") });
   }
 
   console.log("done!");

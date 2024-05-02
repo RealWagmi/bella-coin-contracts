@@ -10,9 +10,19 @@ async function main() {
 
   console.log(`[${network}] deployer address: ${deployer.address}`);
 
-  const game = await ethers.getContractAt("BellaDiceGame", "0x5C...");
+  const game = await ethers.getContractAt("BellaDiceGame", "0xDE58...");
   const gameNotOver = await game.gameNotOver();
   if (gameNotOver) {
+    const latestBlock = (await hardhat.network.provider.send("eth_getBlockByNumber", ["latest", false])) as {
+      timestamp: string;
+    };
+    const timestamp = parseInt(latestBlock.timestamp, 16);
+    const endTime = await game.endTime();
+    console.log("endTime", (endTime - BigInt(timestamp)).toString(), " seconds left");
+
+    const info = await game.getUserLastGameInfo(deployer.address);
+    console.log(info);
+
     const desiredAmt = ethers.parseUnits("10", 18);
     const sendValue = await game.calculatePaymentAmount(desiredAmt);
     await game.purchasePointsEth(desiredAmt, { value: sendValue });
@@ -20,16 +30,17 @@ async function main() {
     await sleep(10000);
 
     let betAmts = [ethers.parseEther("1"), ethers.parseEther("1"), ethers.parseEther("1")];
-    await game.bet(betAmts, { value: ethers.parseEther("0.005") });
+    await game.bet(betAmts, { value: ethers.parseEther("0.003") });
     console.log("bet1");
     await sleep(1000);
+
     betAmts = [ethers.parseEther("1"), ethers.parseEther("1")];
-    await game.bet(betAmts, { value: ethers.parseEther("0.005") });
+    await game.bet(betAmts, { value: ethers.parseEther("0.003") });
     console.log("bet2");
     await sleep(1000);
 
     betAmts = [ethers.parseEther("1")];
-    await game.bet(betAmts, { value: ethers.parseEther("0.005") });
+    await game.bet(betAmts, { value: ethers.parseEther("0.003") });
     console.log("bet3");
   } else {
     console.log("game is over");
@@ -63,9 +74,6 @@ async function main() {
 
   const balance = await game.balanceOf(deployer.address);
   console.log("balance", ethers.formatEther(balance));
-
-  // const info = await game.getUserLastGameInfo(deployer.address);
-  // console.log(info);
 
   console.log("done!");
   process.exit(0);
