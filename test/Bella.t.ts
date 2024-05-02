@@ -378,7 +378,9 @@ describe("Bella Dice Game", function () {
 
     it("should deploy Bella token once when game is over", async () => {
       await mineUpTo((await game.endTime()) + 1n);
+      const [sqrtPriceX96expected, bellaAddress] = await game.calculateBellaDeployParams(bob.address);
       await game.connect(bob).deployBella();
+
       const bellaTokenAddress = await game.bellaToken();
       const bellaV3Pool = await game.bellaV3Pool();
       expect(bellaTokenAddress).to.not.equal(ethers.ZeroAddress);
@@ -386,9 +388,10 @@ describe("Bella Dice Game", function () {
       const pool = await ethers.getContractAt("IUniswapV3Pool", bellaV3Pool);
       expect(await pool.token0()).to.equal(bellaTokenAddress);
       expect(await pool.token1()).to.equal(WETH_ADDRESS);
-      const sqrtPriceX96expected = await game.calculateSqrtPriceX96();
+
       const [sqrtPriceX96current, , , , , ,] = await pool.slot0();
       expect(sqrtPriceX96current).to.equal(sqrtPriceX96expected);
+      expect(bellaAddress).to.equal(bellaTokenAddress);
       bella = await ethers.getContractAt("BellaToken", bellaTokenAddress);
       expect(await bella.name()).to.equal("Bella");
       expect(await bella.symbol()).to.equal("Bella");
@@ -420,6 +423,10 @@ describe("Bella Dice Game", function () {
       expect(wethBalanceAfter).to.equal(0);
       expect(totalSupplyBella).to.closeTo(totalSupplyBefore / 2n, 5);
       expect(wethBalanceVault).to.closeTo(wethBalanceBefore / 2n, 5);
+
+      const BellaBalancGame = await bella.balanceOf(await game.getAddress());
+      expect(BellaBalancGame).to.closeTo(0n, 5n);
+
       const tokenId = await game.uniPosTokenId();
       expect(tokenId).gt(0);
       const positionManager = await ethers.getContractAt(

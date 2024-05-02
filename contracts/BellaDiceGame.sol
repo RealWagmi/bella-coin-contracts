@@ -237,44 +237,21 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         }
     }
 
-    /// This can be used to predict the address before deployment.
-    /// @param deployer The address of the account that would deploy the Bella token.
-    /// @return The anticipated Ethereum address of the to-be-deployed Bella token.
-    function computeBellaAddress(address deployer) public view returns (address) {
-        bytes32 salt = keccak256(abi.encode(deployer));
-        bytes memory bytecode = type(BellaToken).creationCode;
-        bytes32 initCode = keccak256(
-            abi.encodePacked(
-                bytecode,
-                abi.encode(
-                    address(airnodeRrp),
-                    wrappedNativeToken,
-                    address(positionManager),
-                    sponsorWallet
-                )
-            )
-        );
-        return
-            address(
-                uint160(
-                    uint256(
-                        keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCode))
-                    )
-                )
-            );
-    }
-
     /**
-     * @notice Calculates the square root of the price between Bella tokens and Wrapped Native Tokens
-     *
-     * @return sqrtPriceX96 The square root of the calculated price.
+     * @dev Bella Token Deployment Parameters Calculation
+     * @param deployer The address of the account that would deploy the Bella token
+     * @return _sqrtPriceX96 The sqrtPrice required to initialize V3 pool of Bella token
+     * @return _bellaToken The address of the Bella token associated with the deployer's address
      */
-    function calculateSqrtPriceX96() public view returns (uint160 sqrtPriceX96) {
-        bool zeroForBella = address(bellaToken) < wrappedNativeToken;
+    function calculateBellaDeployParams(
+        address deployer
+    ) public view returns (uint160 _sqrtPriceX96, address _bellaToken) {
+        _bellaToken = _computeBellaAddress(deployer);
+        bool zeroForBella = _bellaToken < wrappedNativeToken;
         uint256 halfBella = totalSupply / 2;
         uint256 halfNativeToken = wrappedNativeToken.getBalance() / 2;
 
-        sqrtPriceX96 = zeroForBella
+        _sqrtPriceX96 = zeroForBella
             ? uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, halfNativeToken, halfBella)))
             : uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, halfBella, halfNativeToken)));
     }
@@ -420,17 +397,19 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     /// @custom:require "bellaToken already set" Only allows the bellaToken to be deployed once.
     function deployBella() external shouldGameIsOver {
         require(address(bellaToken) == address(0), "already deployed");
+
+        (uint160 sqrtPriceX96, address _bellaToken) = calculateBellaDeployParams(msg.sender);
+        if (fixedSqrtPrice > 0) {
+            sqrtPriceX96 = fixedSqrtPrice;
+        }
         address _wrappedNativeToken = wrappedNativeToken;
         uint24 _bellaPoolV3feeTiers = BELLA_V3_FEE_TIERS;
-
-        address _bellaToken = computeBellaAddress(msg.sender);
         address _bellaV3Pool = factory.getPool(
             _bellaToken,
             _wrappedNativeToken,
             _bellaPoolV3feeTiers
         );
 
-        uint160 sqrtPriceX96 = fixedSqrtPrice > 0 ? fixedSqrtPrice : calculateSqrtPriceX96();
         // The normal scenario is when the Bella pool does not exist.
         if (_bellaV3Pool == address(0)) {
             _bellaV3Pool = factory.createPool(
@@ -589,6 +568,33 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         _burnPoints(msg.sender, amount);
         wrappedNativeToken.safeTransfer(msg.sender, withdrawAmt);
         emit EmergencyWithdraw(msg.sender, amount, withdrawAmt);
+    }
+
+    /// This can be used to predict the address before deployment.
+    /// @param deployer The address of the account that would deploy the Bella token.
+    /// @return The anticipated Ethereum address of the to-be-deployed Bella token.
+    function _computeBellaAddress(address deployer) private view returns (address) {
+        bytes32 salt = keccak256(abi.encode(deployer));
+        bytes memory bytecode = type(BellaToken).creationCode;
+        bytes32 initCode = keccak256(
+            abi.encodePacked(
+                bytecode,
+                abi.encode(
+                    address(airnodeRrp),
+                    wrappedNativeToken,
+                    address(positionManager),
+                    sponsorWallet
+                )
+            )
+        );
+        return
+            address(
+                uint160(
+                    uint256(
+                        keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCode))
+                    )
+                )
+            );
     }
 
     /**
