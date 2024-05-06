@@ -391,6 +391,30 @@ describe("Bella Dice Game", function () {
       await betSnapshot.restore();
     });
 
+    it("should calculate a repdigit case correctly", async function () {
+      const betAmts = [ethers.parseEther("1"), ethers.parseEther("1"), ethers.parseEther("1")];
+      await game.connect(bob).bet(betAmts, { value: ethers.parseEther("0.001") });
+      const totalSupplyBefore = await game.totalSupply();
+      const userBalanceBefore = await game.balanceOf(bob.address);
+      expect(userBalanceBefore).to.equal(ethers.parseEther("25"));
+      let [id, lastRound] = await game.getUserLastGameInfo(bob.address);
+      expect(lastRound.fulfilled).to.equal(false);
+      expect(lastRound.totalBet).to.equal(ethers.parseEther("3"));
+      const randomWords = [14, 14, 14]; // dice number: 3,3,3
+      const data = ethers.AbiCoder.defaultAbiCoder().encode(["uint256[]"], [randomWords]);
+      await game.connect(airnodeRrpV0).fulfillRandomWords(id, data);
+      const [, lastRoundAfter] = await game.getUserLastGameInfo(bob.address);
+      expect(lastRoundAfter.fulfilled).to.equal(true);
+      const expectedDiceRollResult = "3,3,3";
+      expect(lastRoundAfter.diceRollResult.toString()).to.equal(expectedDiceRollResult);
+      expect(lastRoundAfter.totalWinnings).to.equal(0);
+      const totalSupplyAfter = await game.totalSupply();
+      const userBalanceAfter = await game.balanceOf(bob.address);
+      expect(totalSupplyAfter).to.equal(totalSupplyBefore - lastRound.totalBet);
+      expect(userBalanceAfter).to.equal(ethers.parseEther("22"));
+      await betSnapshot.restore();
+    });
+
   });
 
   describe("deploy Bella ,create V3 pool and distribute Liquidity", function () {

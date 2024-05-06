@@ -357,7 +357,10 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
             }
         }
         // Special logic for determining winnings if the special 69 condition is met
+        // or if the special 666 condition is met
+        // or if the special repdigit condition is met
         if (length == 3) {
+            //Repdigit
             if ((bitDice & (bitDice - 1)) == 0) {
                 totalWinnings = 0;
                 if (bitDice == 64) {
