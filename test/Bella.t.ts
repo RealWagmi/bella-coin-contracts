@@ -17,6 +17,7 @@ import { Console } from "console";
 import { link } from "fs";
 import { deriveSponsorWalletAddress } from "@api3/airnode-admin";
 import { BinaryLike } from "crypto";
+import exp from "constants";
 
 describe("Bella Dice Game", function () {
   const AirnodeRrpV0Address = "0xa0AD79D995DdeeB18a14eAef56A549A04e3Aa1Bd";
@@ -364,6 +365,32 @@ describe("Bella Dice Game", function () {
       expect(userBalanceAfter).to.equal(userBalanceBefore + ethers.parseEther("60") - lastRound.totalBet);
       betSnapshot = await takeSnapshot();
     });
+
+    it("should calculate 666 loss correctly", async function () {
+      const betAmts = [ethers.parseEther("1"), ethers.parseEther("1"), ethers.parseEther("1")];
+      await game.connect(bob).bet(betAmts, { value: ethers.parseEther("0.001") });
+      const totalSupplyBefore = await game.totalSupply();
+      const userBalanceBefore = await game.balanceOf(bob.address);
+      expect(userBalanceBefore).to.equal(ethers.parseEther("25"));
+      let [id, lastRound] = await game.getUserLastGameInfo(bob.address);
+      expect(lastRound.fulfilled).to.equal(false);
+      expect(lastRound.totalBet).to.equal(ethers.parseEther("3"));
+      const randomWords = [29, 29, 29]; // dice number: 6,6,6
+      const data = ethers.AbiCoder.defaultAbiCoder().encode(["uint256[]"], [randomWords]);
+      await game.connect(airnodeRrpV0).fulfillRandomWords(id, data);
+      const [, lastRoundAfter] = await game.getUserLastGameInfo(bob.address);
+      expect(lastRoundAfter.fulfilled).to.equal(true);
+      const expectedDiceRollResult = "6,6,6";
+      expect(lastRoundAfter.diceRollResult.toString()).to.equal(expectedDiceRollResult);
+      expect(lastRoundAfter.totalWinnings).to.equal(0);
+      const totalSupplyAfter = await game.totalSupply();
+      const userBalanceAfter = await game.balanceOf(bob.address);
+      expect(userBalanceBefore).to.equal(lastRoundAfter.totalBet);// all balance is lost
+      expect(totalSupplyAfter).to.equal(totalSupplyBefore - userBalanceBefore);
+      expect(userBalanceAfter).to.equal(0n);
+      await betSnapshot.restore();
+    });
+
   });
 
   describe("deploy Bella ,create V3 pool and distribute Liquidity", function () {
