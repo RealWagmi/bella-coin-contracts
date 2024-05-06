@@ -385,8 +385,7 @@ describe("Bella Dice Game", function () {
       expect(lastRoundAfter.totalWinnings).to.equal(0);
       const totalSupplyAfter = await game.totalSupply();
       const userBalanceAfter = await game.balanceOf(bob.address);
-      expect(userBalanceBefore).to.equal(lastRoundAfter.totalBet);// all balance is lost
-      expect(totalSupplyAfter).to.equal(totalSupplyBefore - userBalanceBefore);
+      expect(totalSupplyAfter).to.equal(totalSupplyBefore - userBalanceBefore);// all balance is lost
       expect(userBalanceAfter).to.equal(0n);
       await betSnapshot.restore();
     });

@@ -333,8 +333,9 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         // Ensure the round has not already been fulfilled
         require(round.fulfilled == false, "a-f");
         uint256 pointsBalance = balanceOf(round.user);
+        uint256 totalBet = round.totalBet;
         // Check if the user has enough points to cover their bet
-        require(round.totalBet <= pointsBalance, "p-n-e");
+        require(totalBet <= pointsBalance, "p-n-e");
         uint256[] memory _randomWords = abi.decode(data, (uint256[]));
         uint256 length = _randomWords.length;
         require(length == round.diceRollResult.length, "i-r");
@@ -365,30 +366,30 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
                 totalWinnings = 0;
                 if (bitDice == 64) {
                     // 666
-                    round.totalBet = pointsBalance;
+                    totalBet = pointsBalance;
                 }
             } else if (bitDice == 72 || bitDice == 112) {
                 // 69
-                totalWinnings = round.totalBet * WIN69_MULTIPLIER;
+                totalWinnings = totalBet * WIN69_MULTIPLIER;
             }
         }
 
         round.totalWinnings = totalWinnings;
         uint256 amt;
         // Calculate and mint or burn points based on whether the user won or lost
-        if (totalWinnings > round.totalBet) {
+        if (totalWinnings > totalBet) {
             unchecked {
-                amt = totalWinnings - round.totalBet;
+                amt = totalWinnings - totalBet;
             }
             _mintPoints(round.user, amt);
-        } else if (totalWinnings < round.totalBet) {
+        } else if (totalWinnings < totalBet) {
             unchecked {
-                amt = round.totalBet - totalWinnings;
+                amt = totalBet - totalWinnings;
             }
             _burnPoints(round.user, amt);
         }
 
-        emit DiceRollResult(round.user, _gameId, int256(totalWinnings) - int256(round.totalBet));
+        emit DiceRollResult(round.user, _gameId, int256(totalWinnings) - int256(totalBet));
     }
 
     /// @notice Deploys Bella token and sets up a corresponding V3 pool.
