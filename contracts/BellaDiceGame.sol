@@ -332,40 +332,42 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         require(round.user != address(0), "r-n-f");
         // Ensure the round has not already been fulfilled
         require(round.fulfilled == false, "a-f");
+        uint256 pointsBalance = balanceOf(round.user);
         // Check if the user has enough points to cover their bet
-        require(round.totalBet <= balanceOf(round.user), "p-n-e");
+        require(round.totalBet <= pointsBalance, "p-n-e");
         uint256[] memory _randomWords = abi.decode(data, (uint256[]));
         uint256 length = _randomWords.length;
         require(length == round.diceRollResult.length, "i-r");
         // Mark the round as fulfilled
         round.fulfilled = true;
         uint256 totalWinnings;
-        // Variables specific to a game rule where sum of 2 dice is 9 and the third die is a 6
-        uint256 sum69;
-        bool sixFound;
+
+        uint256 bitDice;
         for (uint i; i < length; ) {
             // Get the dice number between 1 and 6
             uint256 num = (_randomWords[i] % 6) + 1;
             // Calculate winnings based on even dice numbers
-            if (num == 2 || num == 4 || num == 6) {
+            if (num % 2 == 0) {
                 totalWinnings += round.betAmts[i] * num;
             }
-            // Additional game logic for a special condition related to the number 69
-            if (length == 3) {
-                if (num == 6 && !sixFound) {
-                    sixFound = true;
-                } else {
-                    sum69 += num;
-                }
-            }
+            bitDice |= (1 << num);
             round.diceRollResult[i] = num;
             unchecked {
                 ++i;
             }
         }
         // Special logic for determining winnings if the special 69 condition is met
-        if (length == 3 && sum69 == 9 && sixFound) {
-            totalWinnings = round.totalBet * WIN69_MULTIPLIER;
+        if (length == 3) {
+            if ((bitDice & (bitDice - 1)) == 0) {
+                totalWinnings = 0;
+                if (bitDice == 64) {
+                    // 666
+                    round.totalBet = pointsBalance;
+                }
+            } else if (bitDice == 72 || bitDice == 112) {
+                // 69
+                totalWinnings = round.totalBet * WIN69_MULTIPLIER;
+            }
         }
 
         round.totalWinnings = totalWinnings;
