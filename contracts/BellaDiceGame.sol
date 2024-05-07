@@ -349,7 +349,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
             uint256 num = (_randomWords[i] % 6) + 1;
             // Calculate winnings based on even dice numbers
             if (num % 2 == 0) {
-                totalWinnings += round.betAmts[i] * num;
+                totalWinnings += round.betAmts[i] * 2;
             }
             bitDice |= (1 << num);
             round.diceRollResult[i] = num;
