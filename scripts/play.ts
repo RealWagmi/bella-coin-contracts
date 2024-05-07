@@ -10,7 +10,7 @@ async function main() {
 
   console.log(`[${network}] deployer address: ${deployer.address}`);
 
-  const game = await ethers.getContractAt("BellaDiceGame", "0xDE58...");
+  const game = await ethers.getContractAt("BellaDiceGame", "0xAB4bc49175003EBdc7BD6bFae4afC700b185FdA9");
   const gameNotOver = await game.gameNotOver();
   if (gameNotOver) {
     const latestBlock = (await hardhat.network.provider.send("eth_getBlockByNumber", ["latest", false])) as {

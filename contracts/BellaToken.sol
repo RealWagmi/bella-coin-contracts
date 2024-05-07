@@ -34,8 +34,8 @@ contract BellaToken is ERC20, ERC721Holder {
 
     address payable public sponsorWallet;
     bytes32 public constant endpointIdUint256 =
-        0xfb6d017bb87991b7495f563db3c8cf59ff87b09781947bb1e417006ad7f55a78;
-    address public constant airnode = 0x9d3C147cA16DB954873A498e0af5852AB39139f2;
+        0xffd1bbe880e7b2c662f6c8511b15ff22d12a4a35d5c8c17202893a5f10e25284;
+    address public constant airnode = 0x224e030f03Cd3440D88BD78C9BF5Ed36458A1A25;
 
     uint256 public pumpLastTimestamp;
     uint256 public posTokenId;

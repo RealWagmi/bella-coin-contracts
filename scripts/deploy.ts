@@ -41,14 +41,14 @@ async function main() {
 
   await sleep(30000);
 
-  const anuXpub =
-    "xpub6DXSDTZBd4aPVXnv6Q3SmnGUweFv6j24SK77W4qrSFuhGgi666awUiXakjXruUSCDQhhctVG7AQt67gMdaRAsDnDXv23bBRKsMWvRzo6kbf";
+  const quintessenceXpub =
+    "xpub6CyZcaXvbnbqGfqqZWvWNUbGvdd5PAJRrBeAhy9rz1bbnFmpVLg2wPj1h6TyndFrWLUG3kHWBYpwacgCTGWAHFTbUrXEg6LdLxoEBny2YDz";
 
-  const anuAirnodeAddress = "0x9d3C147cA16DB954873A498e0af5852AB39139f2";
+  const quintessenceAirnodeAddress = "0x224e030f03Cd3440D88BD78C9BF5Ed36458A1A25";
 
   const sponsorWalletAddress = deriveSponsorWalletAddress(
-    anuXpub,
-    anuAirnodeAddress,
+    quintessenceXpub,
+    quintessenceAirnodeAddress,
     diceGameAddress // used as the sponsor
   );
 

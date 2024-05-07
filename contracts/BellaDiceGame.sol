@@ -31,9 +31,9 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     uint256 public constant MAX_NUM_WORDS = 3;
     uint256 public constant DELIMITER = 1e18;
 
-    address public constant airnode = 0x9d3C147cA16DB954873A498e0af5852AB39139f2; // The address of the QRNG Airnode
+    address public constant airnode = 0x224e030f03Cd3440D88BD78C9BF5Ed36458A1A25; // The address of the QRNG Airnode
     bytes32 public constant endpointIdUint256Array =
-        0x27cc2713e7f968e4e86ed274a051a5c8aaee9cca66946f23af6f29ecea9704c3;
+        0x4554e958a68d68de6a4f6365ff868836780e84ac3cba75ce3f4c78a85faa8047;
 
     /// @notice Wrapped native token on current network
     address public immutable wrappedNativeToken;
@@ -296,7 +296,13 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
             address(this), // fulfillAddress
             this.fulfillRandomWords.selector,
             // Using Airnode ABI to encode the parameters
-            abi.encode(bytes32("1u"), bytes32("size"), numWords)
+            abi.encode(
+                bytes32("1us"),
+                bytes32("size"),
+                numWords,
+                bytes32("_minConfirmations"),
+                bytes32("1")
+            )
         );
         // Record the game round details in the contract state
         gameRounds[gameId] = GameRound({
