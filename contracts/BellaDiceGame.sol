@@ -26,6 +26,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     int24 public constant BELLA_V3_TICK_SPACING = 200;
     uint256 public constant WIN69_MULTIPLIER = 10;
     uint256 public constant GAME_PERIOD = 10 days;
+    // The callback time ranges from 20 to 89 seconds, but we will set it with a small margin.
     uint256 public constant CALLBACK_RESERVE_TIME = 3 minutes;
     uint256 public constant CALLBACK_GAS = 200000;
     uint256 public constant MAX_NUM_WORDS = 3;
@@ -61,6 +62,8 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     mapping(bytes32 => GameRound) public gameRounds; /* gameId --> GameRound */
     // Maps an address to their game IDs
     mapping(address => bytes32[]) public userGameIds;
+    // Maps an address to the last time they placed a bet
+    mapping(address => uint256) public lastBetTime;
 
     constructor(
         address wrappedNativeTokenAddress,
@@ -263,6 +266,14 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     function bet(
         uint256[] memory betAmts
     ) external payable shouldGameIsNotOver returns (bytes32 gameId) {
+        {
+            (, GameRound memory round) = getUserLastGameInfo(msg.sender);
+            require(
+                round.fulfilled ||
+                    (_blockTimestamp() - lastBetTime[msg.sender] > CALLBACK_RESERVE_TIME),
+                "too early"
+            );
+        }
         // Check if the number of dice rolls is within the permitted range
         uint256 numWords = betAmts.length;
         require(numWords > 0 && numWords <= MAX_NUM_WORDS, "invalid betAmts");
@@ -315,6 +326,8 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         });
         // Associate the game ID with the user's address
         userGameIds[msg.sender].push(gameId);
+        // Update the last bet time for the user
+        lastBetTime[msg.sender] = _blockTimestamp();
 
         emit Bet(gameId, msg.sender, totalBetAmt);
         // Transfer the received Ether to the sponsor's wallet to cover the callback transaction costs

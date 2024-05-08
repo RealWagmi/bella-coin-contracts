@@ -1,7 +1,5 @@
 import {
   time,
-  mine,
-  mineUpTo,
   takeSnapshot,
   SnapshotRestorer,
   impersonateAccount,
@@ -161,7 +159,7 @@ describe("Bella Dice Game", function () {
     });
 
     it("should revert if the game is over", async function () {
-      await mineUpTo((await game.endTime()) + 1n);
+      await time.increaseTo((await game.endTime()) + 1n);
       await expect(game.purchasePoints(1)).to.be.revertedWith("game over");
 
       // Attempt to send ETH to the contract, which should fail
@@ -231,7 +229,7 @@ describe("Bella Dice Game", function () {
 
     it("Should not allow withdrawal if the user balance is zero", async function () {
       const correctTime = (await game.endTime()) + (await game.maxWaitingTime()) + 1n;
-      await mineUpTo(correctTime);
+      await time.increaseTo(correctTime);
       // Ensuring that user has no balances
       expect(await game.balanceOf(owner.address)).to.equal(0);
       await expect(game.connect(owner).emergencyWithdraw()).to.be.revertedWith("is zero");
@@ -301,8 +299,8 @@ describe("Bella Dice Game", function () {
       const betAmts = [ethers.parseEther("2"), ethers.parseEther("3")];
       const bet = await game.connect(bob).bet(betAmts, { value: ethers.parseEther("0.001") });
       await expect(bet).to.emit(game, "Bet").withArgs(anyValue, bob.address, ethers.parseEther("5"));
-
       expect(await ethers.provider.getBalance(sponsorWalletAddress)).to.equal(ethers.parseEther("0.002"));
+      await time.increaseTo((await time.latest()) + 181);//CALLBACK_RESERVE_TIME
     });
 
     it("should allow a user to place a bet (1 dice) after emergencyFulFilledLastBet", async function () {
@@ -427,7 +425,7 @@ describe("Bella Dice Game", function () {
     });
 
     it("should deploy Bella token once when game is over", async () => {
-      await mineUpTo((await game.endTime()) + 1n);
+      await time.increaseTo((await game.endTime()) + 181n);//CALLBACK_RESERVE_TIME
       const [sqrtPriceX96expected, bellaAddress] = await game.calculateBellaDeployParams(bob.address);
       await game.connect(bob).deployBella();
 
@@ -544,7 +542,7 @@ describe("Bella Dice Game", function () {
       let currentTimestamp = await time.latest();
       const PUMP_INTERVAL = await bella.PUMP_INTERVAL();
 
-      await mineUpTo(BigInt(currentTimestamp) + PUMP_INTERVAL);
+      await time.increaseTo(BigInt(currentTimestamp) + PUMP_INTERVAL);
 
       expect(await bella.isTimeToPump()).to.be.equal(true);
 
