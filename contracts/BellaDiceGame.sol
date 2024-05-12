@@ -26,15 +26,10 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     int24 public constant BELLA_V3_TICK_SPACING = 200;
     uint256 public constant WIN69_MULTIPLIER = 10;
     uint256 public constant GAME_PERIOD = 10 days;
-    // The callback time ranges from 20 to 89 seconds, but we will set it with a small margin.
-    uint256 public constant CALLBACK_RESERVE_TIME = 3 minutes;
+
     uint256 public constant CALLBACK_GAS = 200000;
     uint256 public constant MAX_NUM_WORDS = 3;
     uint256 public constant DELIMITER = 1e18;
-
-    address public constant airnode = 0x224e030f03Cd3440D88BD78C9BF5Ed36458A1A25; // The address of the QRNG Airnode
-    bytes32 public constant endpointIdUint256Array =
-        0x4554e958a68d68de6a4f6365ff868836780e84ac3cba75ce3f4c78a85faa8047;
 
     /// @notice Wrapped native token on current network
     address public immutable wrappedNativeToken;
@@ -43,7 +38,8 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
 
     BellaToken public bellaToken;
     IUniswapV3Pool public bellaV3Pool;
-    address payable public sponsorWallet;
+    address payable public bellaSponsorWallet;
+    address payable public gameRngWallet;
     uint160 public fixedSqrtPrice;
 
     /// @notice Timestamp when the geme ower
@@ -54,18 +50,20 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     /// @notice Initial rate of tokens per wrappedNativeToken
     uint256 public initialTokenRate;
 
+    uint256 public gameId;
+    uint256 public lastFulfilledGameId;
+
     // The total supply of points in existence
     uint256 public totalSupply;
     // Maps an address to their current balance
     mapping(address => uint256) private userBalances;
     // Maps a game ID to its round information
-    mapping(bytes32 => GameRound) public gameRounds; /* gameId --> GameRound */
+    mapping(uint256 => GameRound) public gameRounds; /* gameId --> GameRound */
     // Maps an address to their game IDs
-    mapping(address => bytes32[]) public userGameIds;
-    // Maps an address to the last time they placed a bet
-    mapping(address => uint256) public lastBetTime;
+    mapping(address => uint256[]) public userGameIds;
 
     constructor(
+        address gameRngWalletAddress,
         address wrappedNativeTokenAddress,
         address positionManagerAddress,
         address factoryAddress,
@@ -74,18 +72,19 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         wrappedNativeToken = wrappedNativeTokenAddress;
         positionManager = INonfungiblePositionManager(positionManagerAddress);
         factory = IUniswapV3Factory(factoryAddress);
+        gameRngWallet = payable(gameRngWalletAddress);
     }
 
     event MintBellaPoints(address recipient, uint256 pointsAmount);
     event BurnBellaPoints(address from, uint256 pointsAmount);
-    event StartGame(uint256 initialTokenRate, address sponsorWallet);
-    event Bet(bytes32 gameId, address user, uint256 totalBetAmt);
-    event DiceRollResult(address user, bytes32 gameId, int256 result);
+    event StartGame(uint256 initialTokenRate, address bellaSponsorWallet);
+    event Bet(uint256 gameId, address user, uint256 totalBetAmt);
+    event DiceRollResult(address user, uint256 gameId, int256 result);
     event Redeem(address user, uint256 amount);
     event BellaDeployed(address bellaToken, address bellaV3Pool);
     event DistributeLiquidity(uint256 tokenId);
     event EmergencyWithdraw(address user, uint256 pointsAmount, uint256 withdrawAmt);
-    event EmergencyFulFilledLastBet(address user, bytes32 gameId);
+    event EmergencyFulFilledLastBet(address user, uint256 gameId);
     event PurchasePoints(address user, uint256 paymentAmount);
 
     error AmountOfEthSentIsTooSmall(uint256 sent, uint256 minimum);
@@ -107,10 +106,9 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         _;
     }
 
-    /// @notice Receive ETH and forward to `sponsorWallet`.
+    /// @notice Receive ETH and forward to `bellaSponsorWallet`.
     receive() external payable {
-        require(sponsorWallet != address(0), "sw not set");
-        sponsorWallet.transfer(msg.value);
+        gameRngWallet.transfer(msg.value);
     }
 
     /**
@@ -134,13 +132,14 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         require(_sponsorWallet != address(0), "z-a");
 
         // Set Airnode related information and the sponsor wallet to state variables
-        sponsorWallet = payable(_sponsorWallet);
+        bellaSponsorWallet = payable(_sponsorWallet);
         // Initialize the initial token rate and calculate the end time based on the current timestamp
         initialTokenRate = _initialTokenRate;
         endTime = block.timestamp + GAME_PERIOD;
         maxWaitingTime += endTime;
         if (msg.value > 0) {
-            sponsorWallet.transfer(msg.value);
+            bellaSponsorWallet.transfer(msg.value / 2);
+            gameRngWallet.transfer(msg.value / 2);
         }
         emit StartGame(_initialTokenRate, _sponsorWallet);
     }
@@ -157,7 +156,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     /// @dev Fetches the array of game IDs from `userGameIds` using `.values()`
     /// @param user The address of the user whose game IDs we want to retrieve
     /// @return ids An array of game IDs that the user participated in
-    function getUserGameIds(address user) public view returns (bytes32[] memory ids) {
+    function getUserGameIds(address user) public view returns (uint256[] memory ids) {
         ids = userGameIds[user];
     }
 
@@ -176,8 +175,8 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     /// @return round The GameRound struct containing the details of the game round
     function getUserLastGameInfo(
         address user
-    ) public view returns (bytes32 id, GameRound memory round) {
-        bytes32[] memory ids = userGameIds[user];
+    ) public view returns (uint256 id, GameRound memory round) {
+        uint256[] memory ids = userGameIds[user];
         uint256 length = ids.length;
         if (length > 0) {
             id = ids[length - 1];
@@ -205,7 +204,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     function gameOver() public view returns (bool) {
         uint256 _endTime = endTime;
         _checkZero(_endTime);
-        return block.timestamp > _endTime + CALLBACK_RESERVE_TIME;
+        return (block.timestamp > _endTime && gameId == lastFulfilledGameId);
     }
 
     /**
@@ -240,6 +239,30 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         }
     }
 
+    struct GameState {
+        uint256 gameId;
+        uint256 betNumber;
+    }
+
+    /// @dev This function returns the state of games that have not yet been fulfilled.
+    /// It constructs an array of `GameState` structures representing each unfulfilled game's
+    /// ID and the count of bets placed in that game round.
+    /// The function only includes games with IDs greater than `lastFulfilledGameId`.
+    /// @return state An array of `GameState` structs for each unfulfilled game.
+    function getGameState() public view returns (GameState[] memory state) {
+        if (gameId > lastFulfilledGameId) {
+            uint256 requests = gameId - lastFulfilledGameId;
+            state = new GameState[](requests);
+            uint256 index;
+            while (lastFulfilledGameId + index < gameId) {
+                uint256 id = lastFulfilledGameId + index + 1;
+                state[index].gameId = id;
+                state[index].betNumber = gameRounds[id].betAmts.length;
+                index++;
+            }
+        }
+    }
+
     /**
      * @dev Bella Token Deployment Parameters Calculation
      * @param deployer The address of the account that would deploy the Bella token
@@ -263,16 +286,10 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     /// @dev Transfers the required ETH to sponsor wallet and creates a new game round with provided bets
     /// @param betAmts An array of amounts representing individual bets for each roll of the dice
     /// @return gameId A unique identifier generated for the game round
-    function bet(
-        uint256[] memory betAmts
-    ) external payable shouldGameIsNotOver returns (bytes32 gameId) {
+    function bet(uint256[] memory betAmts) external payable shouldGameIsNotOver returns (uint256) {
         {
-            (, GameRound memory round) = getUserLastGameInfo(msg.sender);
-            require(
-                round.fulfilled ||
-                    (_blockTimestamp() - lastBetTime[msg.sender] > CALLBACK_RESERVE_TIME),
-                "too early"
-            );
+            (uint256 id, GameRound memory round) = getUserLastGameInfo(msg.sender);
+            require(round.fulfilled || id == 0, "last round not fulfilled");
         }
         // Check if the number of dice rolls is within the permitted range
         uint256 numWords = betAmts.length;
@@ -298,25 +315,15 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         if (msg.value < minimumSend) {
             revert AmountOfEthSentIsTooSmall(msg.value, minimumSend);
         }
-        // Request randomness using AirnodeRrp, which will later call the fulfillRandomWords function
-        gameId = airnodeRrp.makeFullRequest(
-            airnode,
-            endpointIdUint256Array,
-            address(this), //sponsor
-            sponsorWallet,
-            address(this), // fulfillAddress
-            this.fulfillRandomWords.selector,
-            // Using Airnode ABI to encode the parameters
-            abi.encode(
-                bytes32("1us"),
-                bytes32("size"),
-                numWords,
-                bytes32("_minConfirmations"),
-                bytes32("1")
-            )
-        );
+        _burnPoints(msg.sender, totalBetAmt);
+
+        unchecked {
+            ++gameId;
+        }
+        uint256 _gameId = gameId;
+
         // Record the game round details in the contract state
-        gameRounds[gameId] = GameRound({
+        gameRounds[_gameId] = GameRound({
             fulfilled: false,
             user: msg.sender,
             totalBet: totalBetAmt,
@@ -324,38 +331,33 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
             betAmts: betAmts,
             diceRollResult: new uint256[](betAmts.length)
         });
-        // Associate the game ID with the user's address
-        userGameIds[msg.sender].push(gameId);
-        // Update the last bet time for the user
-        lastBetTime[msg.sender] = _blockTimestamp();
 
-        emit Bet(gameId, msg.sender, totalBetAmt);
+        // Associate the game ID with the user's address
+        userGameIds[msg.sender].push(_gameId);
+
+        emit Bet(_gameId, msg.sender, totalBetAmt);
         // Transfer the received Ether to the sponsor's wallet to cover the callback transaction costs
-        sponsorWallet.transfer(msg.value);
+        gameRngWallet.transfer(msg.value);
+        return _gameId;
     }
 
     /// @notice Records the result of dice rolls, updates the game round, and handles payouts
     /// @dev Requires the caller to be the designated AirnodeRrp address and checks if the round can be fulfilled
     /// @param _gameId The unique identifier of the game round that the dice roll results correspond to
-    /// @param data Encoded data containing the array of random numbers provided by Airnode RRP
+    /// @param _randomWords The array of random numbers provided by off-chain QRNG service
     ///  Using the QRNG service is free, meaning there is no subscription fee to pay.
     /// There is a gas cost incurred on-chain when Airnode places the random number on-chain in response to a request,
     /// which the requester needs to pay for.
-    function fulfillRandomWords(bytes32 _gameId, bytes calldata data) external onlyAirnodeRrp {
-        // Ensure the game is still active
-        /// @notice Rejects the transaction if the game is over.
-        require(!gameOver(), "game is over");
+    function fulfillRandomWords(uint256 _gameId, uint256[] memory _randomWords) external {
+        require(msg.sender == gameRngWallet, "invalid caller");
+        unchecked {
+            ++lastFulfilledGameId;
+        }
         // Retrieve the game round using the _gameId
         GameRound storage round = gameRounds[_gameId];
-        // Validate the round existence
-        require(round.user != address(0), "r-n-f");
-        // Ensure the round has not already been fulfilled
-        require(round.fulfilled == false, "a-f");
-        uint256 pointsBalance = balanceOf(round.user);
         uint256 totalBet = round.totalBet;
-        // Check if the user has enough points to cover their bet
-        require(totalBet <= pointsBalance, "p-n-e");
-        uint256[] memory _randomWords = abi.decode(data, (uint256[]));
+        require(_gameId == lastFulfilledGameId && totalBet > 0, "invalid gameId");
+
         uint256 length = _randomWords.length;
         require(length == round.diceRollResult.length, "i-r");
         // Mark the round as fulfilled
@@ -385,27 +387,18 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
                 totalWinnings = 0;
                 if (bitDice == 64) {
                     // 666
-                    totalBet = pointsBalance;
+                    uint256 balance = balanceOf(round.user);
+                    totalBet += balance;
+                    _burnPoints(round.user, balance);
                 }
             } else if (bitDice == 72 || bitDice == 112) {
                 // 69
                 totalWinnings = totalBet * WIN69_MULTIPLIER;
             }
         }
-
-        round.totalWinnings = totalWinnings;
-        uint256 amt;
-        // Calculate and mint or burn points based on whether the user won or lost
-        if (totalWinnings > totalBet) {
-            unchecked {
-                amt = totalWinnings - totalBet;
-            }
-            _mintPoints(round.user, amt);
-        } else if (totalWinnings < totalBet) {
-            unchecked {
-                amt = totalBet - totalWinnings;
-            }
-            _burnPoints(round.user, amt);
+        if (totalWinnings > 0) {
+            round.totalWinnings = totalWinnings;
+            _mintPoints(round.user, totalWinnings);
         }
 
         emit DiceRollResult(round.user, _gameId, int256(totalWinnings) - int256(totalBet));
@@ -458,7 +451,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
             address(airnodeRrp),
             wrappedNativeToken,
             address(positionManager),
-            sponsorWallet
+            bellaSponsorWallet
         );
         require(address(bellaToken) == _bellaToken, "a-m");
         emit BellaDeployed(_bellaToken, _bellaV3Pool);
@@ -608,7 +601,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
                     address(airnodeRrp),
                     wrappedNativeToken,
                     address(positionManager),
-                    sponsorWallet
+                    bellaSponsorWallet
                 )
             )
         );
