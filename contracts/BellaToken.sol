@@ -20,7 +20,7 @@ contract BellaToken is ERC20, ERC721Holder {
     uint256 public constant PUMP_BPS = 2500; // 25%
     uint256 public constant PUMP_INTERVAL = 7 days;
     uint256 public constant CALLBACK_GAS = 200000;
-    uint256 public constant EMERGENCY_PUMP_INTERVAL = 180 days;
+    uint256 public constant EMERGENCY_PUMP_INTERVAL = 60 days;
 
     IAirnodeRrpV0 public immutable airnodeRrp;
     address public immutable bellaDGAddress;
