@@ -79,7 +79,7 @@ async function main() {
       WETH_ADDRESS,
       UNDERLYING_POSITION_MANAGER_ADDRESS,
       UNISWAP_V3_FACTORY,
-      AirnodeRrpV0Address
+      AirnodeRrpV0Address,
     ],
   });
 

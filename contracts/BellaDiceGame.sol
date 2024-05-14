@@ -88,6 +88,8 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     event PurchasePoints(address user, uint256 paymentAmount);
 
     error AmountOfEthSentIsTooSmall(uint256 sent, uint256 minimum);
+    error InvalidGameId(uint256 id);
+    error InvaliddiceRollResult(uint256 id);
 
     // Modifiers
     modifier shouldGameIsNotOver() {
@@ -341,6 +343,35 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         return _gameId;
     }
 
+    struct RandomData {
+        uint256 id;
+        uint256[] rn;
+    }
+
+    /**
+     * @notice Fulfills the generation of random words if gas requirement is met
+     * @dev Processes each `RandomData` entries until either all are processed or minimum remaining gas is not met
+     * @param minRemainingGas The minimum amount of gas that must be left for the function to continue processing
+     * @param randomData An array of `RandomData` structs containing the IDs and random number arrays to process
+     * Requirements:
+     * - Only callable by the `gameRngWallet`.
+     * - Will stop processing if the remaining gas is less than `minRemainingGas`.
+     * Emits a `RandomWordsFulfilled` event upon successful processing of an entry.
+     * Uses the `_fulfillRandomWords` internal function to process each entry.
+     */
+    function fulfillRandomWords(uint256 minRemainingGas, RandomData[] memory randomData) external {
+        require(msg.sender == gameRngWallet, "invalid caller");
+        for (uint256 i; i < randomData.length; ) {
+            if (gasleft() < minRemainingGas) {
+                break;
+            }
+            _fulfillRandomWords(randomData[i].id, randomData[i].rn);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
     /// @notice Records the result of dice rolls, updates the game round, and handles payouts
     /// @dev Requires the caller to be the designated AirnodeRrp address and checks if the round can be fulfilled
     /// @param _gameId The unique identifier of the game round that the dice roll results correspond to
@@ -348,18 +379,21 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     ///  Using the QRNG service is free, meaning there is no subscription fee to pay.
     /// There is a gas cost incurred on-chain when Airnode places the random number on-chain in response to a request,
     /// which the requester needs to pay for.
-    function fulfillRandomWords(uint256 _gameId, uint256[] memory _randomWords) external {
-        require(msg.sender == gameRngWallet, "invalid caller");
+    function _fulfillRandomWords(uint256 _gameId, uint256[] memory _randomWords) private {
         unchecked {
             ++lastFulfilledGameId;
         }
         // Retrieve the game round using the _gameId
         GameRound storage round = gameRounds[_gameId];
         uint256 totalBet = round.totalBet;
-        require(_gameId == lastFulfilledGameId && totalBet > 0, "invalid gameId");
+        if (_gameId != lastFulfilledGameId || totalBet == 0) {
+            revert InvalidGameId(_gameId);
+        }
 
         uint256 length = _randomWords.length;
-        require(length == round.diceRollResult.length, "i-r");
+        if (length != round.diceRollResult.length) {
+            revert InvaliddiceRollResult(_gameId);
+        }
         // Mark the round as fulfilled
         round.fulfilled = true;
         uint256 totalWinnings;

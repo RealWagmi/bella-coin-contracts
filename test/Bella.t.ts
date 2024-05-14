@@ -312,18 +312,21 @@ describe("Bella Dice Game", function () {
 
     it("should fail if a last round not fulfilled", async function () {
       const betAmts = [ethers.parseEther("5")];
-      await expect(
-        game.connect(bob).bet(betAmts, { value: ethers.parseEther("0.001") })
-      ).to.be.revertedWith("last round not fulfilled");
+      await expect(game.connect(bob).bet(betAmts, { value: ethers.parseEther("0.001") })).to.be.revertedWith(
+        "last round not fulfilled"
+      );
     });
-
   });
 
   describe("game logic", function () {
     it("should reject when round is not found", async function () {
       const invalidGameId = 30; // gameId that doesn't exist
       const randomWords = [123, 456, 789];
-      await expect(game.connect(operator).fulfillRandomWords(invalidGameId, randomWords)).to.be.revertedWith("invalid gameId");
+      const randomData: BellaDiceGame.RandomDataStruct[] = [{ id: invalidGameId, rn: randomWords }];
+      const minRemainingGas = 1_000_000;
+      await expect(game.connect(operator).fulfillRandomWords(minRemainingGas, randomData))
+        .to.be.revertedWithCustomError(game, "InvalidGameId(uint256 id)")
+        .withArgs(invalidGameId);
     });
 
     it("should calculate winnings correctly", async function () {
@@ -333,7 +336,9 @@ describe("Bella Dice Game", function () {
       expect(lastRound.fulfilled).to.equal(false);
       expect(lastRound.totalBet).to.equal(ethers.parseEther("5"));
       const randomWords = [27]; // dice number = 27 % 6 + 1 = 4
-      await game.connect(operator).fulfillRandomWords(id, randomWords);
+      const randomData: BellaDiceGame.RandomDataStruct[] = [{ id: id, rn: randomWords }];
+      const minRemainingGas = 1_000_000;
+      await game.connect(operator).fulfillRandomWords(minRemainingGas, randomData);
       const [idAfter, lastRoundAfter] = await game.getUserLastGameInfo(bob.address);
       expect(lastRoundAfter.fulfilled).to.equal(true);
       expect(lastRoundAfter.totalWinnings).to.equal(ethers.parseEther("10")); //5*2
@@ -353,7 +358,9 @@ describe("Bella Dice Game", function () {
       expect(lastRound.fulfilled).to.equal(false);
       expect(lastRound.totalBet).to.equal(ethers.parseEther("6"));
       const randomWords = [29, 28, 27]; // dice number = 29 % 6 + 1 = 6, 28 % 6 + 1 = 5, 27 % 6 + 1 = 4
-      await game.connect(operator).fulfillRandomWords(id, randomWords);
+      const randomData: BellaDiceGame.RandomDataStruct[] = [{ id: id, rn: randomWords }];
+      const minRemainingGas = 1_000_000;
+      await game.connect(operator).fulfillRandomWords(minRemainingGas, randomData);
       const [, lastRoundAfter] = await game.getUserLastGameInfo(alice.address);
       expect(lastRoundAfter.fulfilled).to.equal(true);
       const expectedDiceRollResult = "6,5,4";
@@ -376,7 +383,9 @@ describe("Bella Dice Game", function () {
       expect(lastRound.fulfilled).to.equal(false);
       expect(lastRound.totalBet).to.equal(ethers.parseEther("3"));
       const randomWords = [29, 29, 29]; // dice number: 6,6,6
-      await game.connect(operator).fulfillRandomWords(id, randomWords);
+      const randomData: BellaDiceGame.RandomDataStruct[] = [{ id: id, rn: randomWords }];
+      const minRemainingGas = 1_000_000;
+      await game.connect(operator).fulfillRandomWords(minRemainingGas, randomData);
       const [, lastRoundAfter] = await game.getUserLastGameInfo(bob.address);
       expect(lastRoundAfter.fulfilled).to.equal(true);
       const expectedDiceRollResult = "6,6,6";
@@ -384,7 +393,7 @@ describe("Bella Dice Game", function () {
       expect(lastRoundAfter.totalWinnings).to.equal(0);
       const totalSupplyAfter = await game.totalSupply();
       const userBalanceAfter = await game.balanceOf(bob.address);
-      expect(totalSupplyAfter).to.equal(totalSupplyBefore - userBalanceBefore);// all balance is lost
+      expect(totalSupplyAfter).to.equal(totalSupplyBefore - userBalanceBefore); // all balance is lost
       expect(userBalanceAfter).to.equal(0n);
       await betSnapshot.restore();
     });
@@ -399,7 +408,9 @@ describe("Bella Dice Game", function () {
       expect(lastRound.fulfilled).to.equal(false);
       expect(lastRound.totalBet).to.equal(ethers.parseEther("3"));
       const randomWords = [14, 14, 14]; // dice number: 3,3,3
-      await game.connect(operator).fulfillRandomWords(id, randomWords);
+      const randomData: BellaDiceGame.RandomDataStruct[] = [{ id: id, rn: randomWords }];
+      const minRemainingGas = 1_000_000;
+      await game.connect(operator).fulfillRandomWords(minRemainingGas, randomData);
       const [, lastRoundAfter] = await game.getUserLastGameInfo(bob.address);
       expect(lastRoundAfter.fulfilled).to.equal(true);
       const expectedDiceRollResult = "3,3,3";
@@ -411,7 +422,6 @@ describe("Bella Dice Game", function () {
       expect(userBalanceAfter).to.equal(userBalanceBefore);
       await betSnapshot.restore();
     });
-
   });
 
   describe("deploy Bella ,create V3 pool and distribute Liquidity", function () {
@@ -425,7 +435,7 @@ describe("Bella Dice Game", function () {
     });
 
     it("should deploy Bella token once when game is over", async () => {
-      await time.increaseTo((await game.endTime()) + 181n);//CALLBACK_RESERVE_TIME
+      await time.increaseTo((await game.endTime()) + 181n); //CALLBACK_RESERVE_TIME
       const [sqrtPriceX96expected, bellaAddress] = await game.calculateBellaDeployParams(bob.address);
       await game.connect(bob).deployBella();
 
