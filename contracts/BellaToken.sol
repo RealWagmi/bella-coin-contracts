@@ -26,7 +26,7 @@ contract BellaToken is ERC20, ERC721Holder {
     address public immutable bellaDGAddress;
 
     bool public zeroForTokenIn;
-    address public wrappedNativeTokenAddress;
+    address public quoteTokenAddress;
     INonfungiblePositionManager public positionManager;
     IUniswapV3Pool public bellaV3Pool;
 
@@ -43,12 +43,12 @@ contract BellaToken is ERC20, ERC721Holder {
 
     constructor(
         address airnodeRrpAddress,
-        address _wrappedNativeTokenAddress,
+        address _quoteTokenAddress,
         address _positionManagerAddress,
         address _sponsorWallet
     ) ERC20("Bella", "Bella") {
         airnodeRrp = IAirnodeRrpV0(airnodeRrpAddress);
-        wrappedNativeTokenAddress = _wrappedNativeTokenAddress;
+        quoteTokenAddress = _quoteTokenAddress;
         positionManager = INonfungiblePositionManager(_positionManagerAddress);
         sponsorWallet = payable(_sponsorWallet);
         bellaDGAddress = msg.sender;
@@ -75,7 +75,7 @@ contract BellaToken is ERC20, ERC721Holder {
     }
 
     receive() external payable {
-        IWETH(wrappedNativeTokenAddress).deposit{ value: msg.value }();
+        sponsorWallet.transfer(msg.value);
     }
 
     function mint(address account, uint256 amount) external onlyBellaDiceGame {
@@ -203,7 +203,7 @@ contract BellaToken is ERC20, ERC721Holder {
             })
         );
         // Calculate the pamp amount based on the wrapped native token balance and BPS
-        uint256 pampAmt = (wrappedNativeTokenAddress.getBalance() * PUMP_BPS) / BP;
+        uint256 pampAmt = (quoteTokenAddress.getBalance() * PUMP_BPS) / BP;
         if (pampAmt > 0) {
             _checkPriceDeviation(); // Internal check for price deviation
 
@@ -235,7 +235,7 @@ contract BellaToken is ERC20, ERC721Holder {
         }
 
         uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
-        wrappedNativeTokenAddress.safeTransfer(msg.sender, amountToPay);
+        quoteTokenAddress.safeTransfer(msg.sender, amountToPay);
     }
 
     function _checkPriceDeviation() private view returns (int24 currentTick) {

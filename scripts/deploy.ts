@@ -12,7 +12,7 @@ async function main() {
   console.log(`[${network}] deployer address: ${deployer.address}`);
 
   let AirnodeRrpV0Address = "";
-  let WETH_ADDRESS = "";
+  let WAGMI_ADDRESS = "";
   let UNDERLYING_POSITION_MANAGER_ADDRESS = "";
   let UNISWAP_V3_FACTORY = "";
   let SEND_VALUE;
@@ -24,15 +24,15 @@ async function main() {
     // wagmi
     UNDERLYING_POSITION_MANAGER_ADDRESS = "0xA7E119Cf6c8f5Be29Ca82611752463f0fFcb1B02";
     UNISWAP_V3_FACTORY = "0x8112E18a34b63964388a3B2984037d6a2EFE5B8A";
-    WETH_ADDRESS = "0x75cb093E4D61d2A2e65D8e0BBb01DE8d89b53481"; //WMETIS 18
+    WAGMI_ADDRESS = "0xaf20f5f19698f1D19351028cd7103B63D30DE7d7"; //WAGMI
     SEND_VALUE = ethers.parseEther("0.2");
-    QRNG_OPERATOR_ADDRESS = "0x.....";
+    QRNG_OPERATOR_ADDRESS = "0x73e68EF04F2eddCeF36f47C2F2a86a4Dd711a9c2";
   }
 
   const BellaDiceGameFactory = await ethers.getContractFactory("BellaDiceGame");
   const diceGame = await BellaDiceGameFactory.deploy(
     QRNG_OPERATOR_ADDRESS,
-    WETH_ADDRESS,
+    WAGMI_ADDRESS,
     UNDERLYING_POSITION_MANAGER_ADDRESS,
     UNISWAP_V3_FACTORY,
     AirnodeRrpV0Address
@@ -65,7 +65,7 @@ async function main() {
   const deadline = parseInt(latestBlock.timestamp, 16) + 120;
   await sleep(1000);
   console.log("starting game...", deadline);
-  const initialTokenRate = ethers.parseUnits("1000", 18); // 1000 Bella per WETH
+  const initialTokenRate = ethers.parseUnits("1000", 18); // 1000 Bella per Wagmi
   await diceGame.startGame(sponsorWalletAddress, initialTokenRate, deadline, { value: SEND_VALUE });
 
   console.log("game started!");
@@ -76,7 +76,7 @@ async function main() {
     address: diceGameAddress,
     constructorArguments: [
       QRNG_OPERATOR_ADDRESS,
-      WETH_ADDRESS,
+      WAGMI_ADDRESS,
       UNDERLYING_POSITION_MANAGER_ADDRESS,
       UNISWAP_V3_FACTORY,
       AirnodeRrpV0Address,

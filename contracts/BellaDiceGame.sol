@@ -32,7 +32,8 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     uint256 public constant DELIMITER = 1e18;
 
     /// @notice Wrapped native token on current network
-    address public immutable wrappedNativeToken;
+    // address public immutable wrappedNativeToken;
+    address public immutable quoteToken;
     INonfungiblePositionManager public immutable positionManager;
     IUniswapV3Factory public immutable factory;
 
@@ -47,7 +48,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     uint256 public maxWaitingTime = 7 days;
     uint256 public uniPosTokenId;
 
-    /// @notice Initial rate of tokens per wrappedNativeToken
+    /// @notice Initial rate of tokens per quoteToken
     uint256 public initialTokenRate;
 
     uint256 public gameId;
@@ -64,12 +65,12 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
 
     constructor(
         address gameRngWalletAddress,
-        address wrappedNativeTokenAddress,
+        address quoteTokenAddress,
         address positionManagerAddress,
         address factoryAddress,
         address airnodeRrpAddress // 0xC02Ea0f403d5f3D45a4F1d0d817e7A2601346c9E for metis
     ) RrpRequesterV0(airnodeRrpAddress) {
-        wrappedNativeToken = wrappedNativeTokenAddress;
+        quoteToken = quoteTokenAddress;
         positionManager = INonfungiblePositionManager(positionManagerAddress);
         factory = IUniswapV3Factory(factoryAddress);
         gameRngWallet = payable(gameRngWalletAddress);
@@ -275,13 +276,13 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         address deployer
     ) public view returns (uint160 _sqrtPriceX96, address _bellaToken) {
         _bellaToken = _computeBellaAddress(deployer);
-        bool zeroForBella = _bellaToken < wrappedNativeToken;
+        bool zeroForBella = _bellaToken < quoteToken;
         uint256 halfBella = totalSupply / 2;
-        uint256 halfNativeToken = wrappedNativeToken.getBalance() / 2;
+        uint256 halfQuoteToken = quoteToken.getBalance() / 2;
 
         _sqrtPriceX96 = zeroForBella
-            ? uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, halfNativeToken, halfBella)))
-            : uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, halfBella, halfNativeToken)));
+            ? uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, halfQuoteToken, halfBella)))
+            : uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, halfBella, halfQuoteToken)));
     }
 
     /// @notice Allows a user to place a bet on a dice roll(s), record the bet details, and request randomness
@@ -454,21 +455,13 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         if (fixedSqrtPrice > 0) {
             sqrtPriceX96 = fixedSqrtPrice;
         }
-        address _wrappedNativeToken = wrappedNativeToken;
+        address _quoteToken = quoteToken;
         uint24 _bellaPoolV3feeTiers = BELLA_V3_FEE_TIERS;
-        address _bellaV3Pool = factory.getPool(
-            _bellaToken,
-            _wrappedNativeToken,
-            _bellaPoolV3feeTiers
-        );
+        address _bellaV3Pool = factory.getPool(_bellaToken, _quoteToken, _bellaPoolV3feeTiers);
 
         // The normal scenario is when the Bella pool does not exist.
         if (_bellaV3Pool == address(0)) {
-            _bellaV3Pool = factory.createPool(
-                _bellaToken,
-                _wrappedNativeToken,
-                _bellaPoolV3feeTiers
-            );
+            _bellaV3Pool = factory.createPool(_bellaToken, _quoteToken, _bellaPoolV3feeTiers);
             IUniswapV3Pool(_bellaV3Pool).initialize(sqrtPriceX96);
         } else {
             // The scenario with DOS prevention. Create a pool in advance with the correct price
@@ -483,7 +476,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         bytes32 salt = keccak256(abi.encode(msg.sender));
         bellaToken = new BellaToken{ salt: salt }(
             address(airnodeRrp),
-            wrappedNativeToken,
+            _quoteToken,
             address(positionManager),
             bellaSponsorWallet
         );
@@ -493,11 +486,11 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
 
     /**
      * @notice Distributes liquidity to Bella's liquidity pool.
-     * @dev This function manages the distribution of Bella and Wrapped Native Token (e.g., WETH) liquidity
+     * @dev This function manages the distribution of Bella and Quote Token (e.g., WETH) liquidity
      * to the Uniswap V3 pool represented by `bellaV3Pool`. It ensures that there is a Bella token address set
      * (ensuring `deployBella` was called), mints Bella tokens, approves the necessary tokens for the positionManager,
      * and then provides liquidity by minting a new position in the liquidity pool. Finally, it transfers any remaining
-     * Wrapped Native Token balance to the Bella liquidity vault and initializes it with the provided parameters.
+     * Quote Token balance to the Bella liquidity vault and initializes it with the provided parameters.
      *
      * Reverts if the bellaToken has not been set, indicating deployBella() should be called first.
      * Also reverts if the Bella vault's initialization fails post-liquidity provision.
@@ -507,18 +500,19 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         require(uniPosTokenId == 0, "already distributed");
         // Increase the observation cardinality for the Bella pool
         bellaV3Pool.increaseObservationCardinalityNext(observationCardinalityNext);
-        // Determine the ordering of token addresses for Bella and Wrapped Native Token
-        bool zeroForBella = address(bellaToken) < wrappedNativeToken;
+        address _quoteToken = quoteToken;
+        // Determine the ordering of token addresses for Bella and Quote Token
+        bool zeroForBella = address(bellaToken) < _quoteToken;
         (address token0, address token1) = zeroForBella
-            ? (address(bellaToken), wrappedNativeToken)
-            : (wrappedNativeToken, address(bellaToken));
+            ? (address(bellaToken), _quoteToken)
+            : (_quoteToken, address(bellaToken));
 
         // Retrieve the full range of liquidity ticks for adding liquidity
         (int24 tickLower, int24 tickUpper) = _getFullTickRange();
 
-        uint256 weth9Balance = wrappedNativeToken.getBalance();
+        uint256 quoteBalance = _quoteToken.getBalance();
         uint256 halfBella = totalSupply / 2;
-        uint256 halfNativeToken = weth9Balance / 2;
+        uint256 halfNativeToken = quoteBalance / 2;
         (uint256 amount0, uint256 amount1) = zeroForBella
             ? (halfBella, halfNativeToken)
             : (halfNativeToken, halfBella);
@@ -543,9 +537,9 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
                 deadline: block.timestamp
             })
         );
-        // Transfer any remaining Wrapped Native Token balance to the Bella liquidity vault
-        weth9Balance = wrappedNativeToken.getBalance();
-        wrappedNativeToken.safeTransfer(address(bellaToken), weth9Balance);
+        // Transfer any remaining Quote Token balance to the Bella liquidity vault
+        quoteBalance = _quoteToken.getBalance();
+        _quoteToken.safeTransfer(address(bellaToken), quoteBalance);
 
         airnodeRrp.setSponsorshipStatus(address(bellaToken), true);
         // Initialize the Bella vault with the newly created liquidity position; revert if failed
@@ -556,29 +550,13 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     }
 
     /**
-     * @notice Purchase game points by sending ETH to this function.
-     * @dev The desired amount of game points is specified as an argument. This value is compared
-     * with the calculated amount from `calculatePointsAmount`. It mints the points and wraps the ETH
-     * into WETH after validating that the desired amount is correct.
-     * @param desiredAmountOut The exact amount of game points the user wishes to receive.
-     * Requires that the calculated amount of points equals the desired amount.
-     */
-    function purchasePointsEth(uint256 desiredAmountOut) external payable shouldGameIsNotOver {
-        uint256 out = calculatePointsAmount(msg.value);
-        require(desiredAmountOut == out, "invalid amount");
-        _mintPoints(msg.sender, desiredAmountOut);
-        IWETH(wrappedNativeToken).deposit{ value: msg.value }();
-        emit PurchasePoints(msg.sender, msg.value);
-    }
-
-    /**
      * @notice Allows users to purchase a specified amount of bella points.
      * @param desiredAmountOut The exact amount of bella points the user wants to purchase.
      */
     function purchasePoints(uint256 desiredAmountOut) external shouldGameIsNotOver {
         _mintPoints(msg.sender, desiredAmountOut);
         uint256 paymentAmount = calculatePaymentAmount(desiredAmountOut);
-        wrappedNativeToken.safeTransferFrom(msg.sender, address(this), paymentAmount);
+        quoteToken.safeTransferFrom(msg.sender, address(this), paymentAmount);
         emit PurchasePoints(msg.sender, paymentAmount);
     }
 
@@ -598,10 +576,10 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
 
     /**
      * @notice Allows users to withdraw their funds from the contract in emergency situations.
-     * @dev Withdraws Wrapped Native Token proportional to the user's share of the total supply. Can only be called after
+     * @dev Withdraws Quote Token proportional to the user's share of the total supply. Can only be called after
      *      a certain time period defined by `endTime + maxWaitingTime` has passed and if no Uniswap position token (uniPosTokenId)
      *      is associated with the contract. It calculates the amount to withdraw based on the balance of `msg.sender` relative
-     *      to the total supply, burns the user's points (shares), and transfers the calculated Wrapped Native Token amount to
+     *      to the total supply, burns the user's points (shares), and transfers the calculated Quote Token amount to
      *      `msg.sender`.
      *
      * Requirements:
@@ -615,10 +593,10 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         require(block.timestamp > maxWaitingTime && uniPosTokenId == 0, "forbidden");
         uint256 amount = balanceOf(msg.sender);
         _checkZero(amount);
-        uint256 balance = wrappedNativeToken.getBalance();
+        uint256 balance = quoteToken.getBalance();
         uint256 withdrawAmt = FullMath.mulDiv(balance, amount, totalSupply);
         _burnPoints(msg.sender, amount);
-        wrappedNativeToken.safeTransfer(msg.sender, withdrawAmt);
+        quoteToken.safeTransfer(msg.sender, withdrawAmt);
         emit EmergencyWithdraw(msg.sender, amount, withdrawAmt);
     }
 
@@ -633,7 +611,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
                 bytecode,
                 abi.encode(
                     address(airnodeRrp),
-                    wrappedNativeToken,
+                    quoteToken,
                     address(positionManager),
                     bellaSponsorWallet
                 )
