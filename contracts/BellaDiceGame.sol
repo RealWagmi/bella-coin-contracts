@@ -399,12 +399,17 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         uint256 totalWinnings;
 
         uint256 bitDice;
+        bool double3;
         for (uint i; i < length; ) {
             // Get the dice number between 1 and 6
             uint256 num = (_randomWords[i] % 6) + 1;
             // Calculate winnings based on even dice numbers
             if (num % 2 == 0) {
                 totalWinnings += round.betAmts[i] * 2;
+            }
+            // Special logic for determining 33
+            if (num == 3 && !double3 && bitDice & (1 << num) == (1 << num)) {
+                double3 = true;
             }
             bitDice |= (1 << num);
             round.diceRollResult[i] = num;
@@ -425,7 +430,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
                     totalBet += balance;
                     _burnPoints(round.user, balance);
                 }
-            } else if (bitDice == 72 || bitDice == 112) {
+            } else if ((bitDice == 72 && !double3) || bitDice == 112) {
                 // 69
                 totalWinnings = totalBet * WIN69_MULTIPLIER;
             }
