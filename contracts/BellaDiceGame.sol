@@ -44,7 +44,8 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     BellaToken public bellaToken;
     IUniswapV3Pool public bellaV3Pool;
     address payable public sponsorWallet;
-    uint160 public fixedSqrtPrice;
+    uint160 public fixedSqrtPriceIfZero;
+    uint160 public fixedSqrtPriceIfNotZero;
 
     /// @notice Timestamp when the geme ower
     uint256 public endTime;
@@ -243,14 +244,15 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     /**
      * @dev Bella Token Deployment Parameters Calculation
      * @param deployer The address of the account that would deploy the Bella token
+     * @return zeroForBella A boolean indicating whether the Bella token address is less than the Wrapped Native Token address
      * @return _sqrtPriceX96 The sqrtPrice required to initialize V3 pool of Bella token
      * @return _bellaToken The address of the Bella token associated with the deployer's address
      */
     function calculateBellaDeployParams(
         address deployer
-    ) public view returns (uint160 _sqrtPriceX96, address _bellaToken) {
+    ) public view returns (bool zeroForBella, uint160 _sqrtPriceX96, address _bellaToken) {
         _bellaToken = _computeBellaAddress(deployer);
-        bool zeroForBella = _bellaToken < wrappedNativeToken;
+        zeroForBella = _bellaToken < wrappedNativeToken;
         uint256 halfBella = totalSupply / 2;
         uint256 halfNativeToken = wrappedNativeToken.getBalance() / 2;
 
@@ -428,10 +430,10 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     function deployBella() external shouldGameIsOver {
         require(address(bellaToken) == address(0), "already deployed");
 
-        (uint160 sqrtPriceX96, address _bellaToken) = calculateBellaDeployParams(msg.sender);
-        if (fixedSqrtPrice > 0) {
-            sqrtPriceX96 = fixedSqrtPrice;
-        }
+        (bool zeroForBella, uint160 sqrtPriceX96, address _bellaToken) = calculateBellaDeployParams(
+            msg.sender
+        );
+
         address _wrappedNativeToken = wrappedNativeToken;
         uint24 _bellaPoolV3feeTiers = BELLA_V3_FEE_TIERS;
         address _bellaV3Pool = factory.getPool(
@@ -452,8 +454,18 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
             // The scenario with DOS prevention. Create a pool in advance with the correct price
             // by computing the Bella token address.
             (uint160 sqrtPriceX96current, , , , , , ) = IUniswapV3Pool(_bellaV3Pool).slot0();
+            if (zeroForBella) {
+                if (fixedSqrtPriceIfZero != 0) sqrtPriceX96 = fixedSqrtPriceIfZero;
+            } else if (fixedSqrtPriceIfNotZero != 0) {
+                sqrtPriceX96 = fixedSqrtPriceIfNotZero;
+            }
             if (sqrtPriceX96current != sqrtPriceX96) {
-                fixedSqrtPrice = sqrtPriceX96;
+                if (zeroForBella) {
+                    fixedSqrtPriceIfZero = sqrtPriceX96;
+                } else {
+                    fixedSqrtPriceIfNotZero = sqrtPriceX96;
+                }
+
                 return;
             }
         }

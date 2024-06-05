@@ -426,7 +426,7 @@ describe("Bella Dice Game", function () {
 
     it("should deploy Bella token once when game is over", async () => {
       await time.increaseTo((await game.endTime()) + 181n);//CALLBACK_RESERVE_TIME
-      const [sqrtPriceX96expected, bellaAddress] = await game.calculateBellaDeployParams(bob.address);
+      const [zeroForBella, sqrtPriceX96expected, bellaAddress] = await game.calculateBellaDeployParams(bob.address);
       await game.connect(bob).deployBella();
 
       const bellaTokenAddress = await game.bellaToken();
@@ -542,7 +542,7 @@ describe("Bella Dice Game", function () {
       let currentTimestamp = await time.latest();
       const PUMP_INTERVAL = await bella.PUMP_INTERVAL();
 
-      await time.increaseTo(BigInt(currentTimestamp) + PUMP_INTERVAL);
+      await time.increaseTo(BigInt(currentTimestamp) + PUMP_INTERVAL + 1n);
 
       expect(await bella.isTimeToPump()).to.be.equal(true);
 
