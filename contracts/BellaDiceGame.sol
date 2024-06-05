@@ -44,8 +44,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     BellaToken public bellaToken;
     IUniswapV3Pool public bellaV3Pool;
     address payable public sponsorWallet;
-    uint160 public fixedSqrtPriceIfZero;
-    uint160 public fixedSqrtPriceIfNotZero;
+    mapping(bool => uint160) public fixedSqrtPrice;
 
     /// @notice Timestamp when the geme ower
     uint256 public endTime;
@@ -454,18 +453,13 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
             // The scenario with DOS prevention. Create a pool in advance with the correct price
             // by computing the Bella token address.
             (uint160 sqrtPriceX96current, , , , , , ) = IUniswapV3Pool(_bellaV3Pool).slot0();
-            if (zeroForBella) {
-                if (fixedSqrtPriceIfZero != 0) sqrtPriceX96 = fixedSqrtPriceIfZero;
-            } else if (fixedSqrtPriceIfNotZero != 0) {
-                sqrtPriceX96 = fixedSqrtPriceIfNotZero;
+
+            uint160 fSqrtPrice = fixedSqrtPrice[zeroForBella];
+            if (fSqrtPrice != 0) {
+                sqrtPriceX96 = fSqrtPrice;
             }
             if (sqrtPriceX96current != sqrtPriceX96) {
-                if (zeroForBella) {
-                    fixedSqrtPriceIfZero = sqrtPriceX96;
-                } else {
-                    fixedSqrtPriceIfNotZero = sqrtPriceX96;
-                }
-
+                fixedSqrtPrice[zeroForBella] = sqrtPriceX96;
                 return;
             }
         }
