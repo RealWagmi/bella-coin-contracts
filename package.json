@@ -28,7 +28,8 @@
         "hardhat-tracer": "^2.8.1",
         "prettier-plugin-solidity": "^1.3.1",
         "ts-node": "^10.9.2",
-        "typescript": "^5.4.2"
+        "typescript": "^5.4.2",
+        "hardhat": "2.20.1"
     },
     "dependencies": {
         "@api3/airnode-admin": "^0.14.1"

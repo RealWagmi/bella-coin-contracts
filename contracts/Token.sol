@@ -11,28 +11,29 @@ import { IWETH } from "./interfaces/IWETH.sol";
 import { TickMath } from "./vendor0.8/uniswap/TickMath.sol";
 import { FullMath } from "./vendor0.8/uniswap/FullMath.sol";
 
-contract BellaToken is ERC20, ERC721Holder {
+contract Token is ERC20, ERC721Holder {
     using TransferHelper for address;
 
     uint32 public constant TWAP_DURATION = 10 minutes;
     uint256 public constant TWAP_DEVIATION = 300; // 3%
     uint256 public constant BP = 10_000;
-    uint256 public constant PUMP_BPS = 2500; // 25%
-    uint256 public constant PUMP_INTERVAL = 7 days;
     uint256 public constant CALLBACK_GAS = 200000;
     uint256 public constant EMERGENCY_PUMP_INTERVAL = 60 days;
 
+    uint256 public immutable pumpInterval;
+    uint256 public immutable pumpBPS; 
+
     IAirnodeRrpV0 public immutable airnodeRrp;
-    address public immutable bellaDGAddress;
+    address public immutable V3Deployer;
 
     bool public zeroForTokenIn;
-    address public quoteTokenAddress;
+    address public wrappedNative;
     INonfungiblePositionManager public positionManager;
-    IUniswapV3Pool public bellaV3Pool;
+    IUniswapV3Pool public V3Pool;
 
     bool public pumpEnabled;
 
-    address payable public sponsorWallet;
+    address public sponsorWallet;
     bytes32 public constant endpointIdUint256 =
         0xffd1bbe880e7b2c662f6c8511b15ff22d12a4a35d5c8c17202893a5f10e25284;
     address public constant airnode = 0x224e030f03Cd3440D88BD78C9BF5Ed36458A1A25;
@@ -42,16 +43,22 @@ contract BellaToken is ERC20, ERC721Holder {
     mapping(bytes32 => bool) public pendingRequestIds;
 
     constructor(
-        address airnodeRrpAddress,
-        address _quoteTokenAddress,
+        address _airnodeRrpAddress,
+        address _wrappedNative,
         address _positionManagerAddress,
-        address _sponsorWallet
-    ) ERC20("Bella", "Bella") {
-        airnodeRrp = IAirnodeRrpV0(airnodeRrpAddress);
-        quoteTokenAddress = _quoteTokenAddress;
+        address _sponsorWallet,
+        string memory _name,
+        string memory _symbol,
+        uint _pumpInterval,
+        uint _pumpBPS
+    ) ERC20(_name, _symbol) {
+        airnodeRrp = IAirnodeRrpV0(_airnodeRrpAddress);
+        wrappedNative = _wrappedNative;
         positionManager = INonfungiblePositionManager(_positionManagerAddress);
-        sponsorWallet = payable(_sponsorWallet);
-        bellaDGAddress = msg.sender;
+        sponsorWallet = _sponsorWallet;
+        V3Deployer = msg.sender;
+        pumpInterval = _pumpInterval;
+        pumpBPS = _pumpBPS;
     }
 
     event Pump(uint256 pampAmt, uint256 burnAmt);
@@ -69,43 +76,36 @@ contract BellaToken is ERC20, ERC721Holder {
         _;
     }
 
-    modifier onlyBellaDiceGame() {
-        require(msg.sender == bellaDGAddress, "f");
+    modifier onlyV3Deployer() {
+        require(msg.sender == V3Deployer, "f");
         _;
     }
 
     receive() external payable {
-        sponsorWallet.transfer(msg.value);
+        (bool success, ) = sponsorWallet.call{value: msg.value}("");
+        require(success);   
     }
 
-    function mint(address account, uint256 amount) external onlyBellaDiceGame {
+    function mint(address account, uint256 amount) external onlyV3Deployer {
         _mint(account, amount);
     }
 
-    function burn(uint256 value) external {
-        _burn(msg.sender, value);
-    }
-
     /**
-     * @notice Initializes the BellaPool with the specified parameters.
-     * @param zeroForBella If set to true, token0 will be used in the pool, otherwise token1.
-     * @param bellaV3PoolAddress The address of the Uniswap V3 pool for BELLA.
+     * @notice Initializes the V3Pool with the specified parameters.
+     * @param zeroForOne If set to true, token0 will be used in the pool, otherwise token1.
+     * @param V3PoolAddress The address of the Uniswap V3 pool for Token.
      * @param tokenId The token ID used for position management within the Uniswap V3 pool.
      */
-    function initialize(
-        bool zeroForBella,
-        address bellaV3PoolAddress,
-        uint256 tokenId
-    ) external onlyBellaDiceGame {
-        bellaV3Pool = IUniswapV3Pool(bellaV3PoolAddress);
+    function initialize(bool zeroForOne, address V3PoolAddress, uint256 tokenId) external onlyV3Deployer {
+        V3Pool = IUniswapV3Pool(V3PoolAddress);
         posTokenId = tokenId;
-        zeroForTokenIn = !zeroForBella;
+        zeroForTokenIn = !zeroForOne;
         pumpLastTimestamp = block.timestamp;
     }
 
     /// @notice Determines if the current time is past the required interval to activate the pump.
     function isTimeToPump() public view returns (bool) {
-        return block.timestamp > pumpLastTimestamp + PUMP_INTERVAL;
+        return block.timestamp > pumpLastTimestamp + pumpInterval;
     }
 
     /// @notice Determines if the current time allows for an emergency activation of the pump.
@@ -144,7 +144,7 @@ contract BellaToken is ERC20, ERC721Holder {
         bytes32 requestId = airnodeRrp.makeFullRequest(
             airnode,
             endpointIdUint256,
-            bellaDGAddress, //sponsor
+            V3Deployer, //sponsor
             sponsorWallet,
             address(this),
             this.fulfillRandomWords.selector,
@@ -153,7 +153,8 @@ contract BellaToken is ERC20, ERC721Holder {
         pendingRequestIds[requestId] = true;
 
         emit TryToEnablePump(requestId);
-        sponsorWallet.transfer(msg.value);
+        (bool success, ) = sponsorWallet.call{value: msg.value}("");
+        require(success);  
 
         //subscribe to the AirnodeRrpV0 contract event FailedRequest(airnode, requestId, errorMessage) to identify the error
     }
@@ -183,8 +184,8 @@ contract BellaToken is ERC20, ERC721Holder {
      * 1. Collecting accumulated fees from a Uniswap V3 position,
      * 2. Calculating the pamp amount based on the balance of wrapped native tokens and defined basis points (BPS),
      * 3. Checking for price deviations before swapping,
-     * 4. Performing the swap at the Bella V3 Pool,
-     * 5. Burning the acquired Bella tokens.
+     * 4. Performing the swap at the V3 Pool,
+     * 5. Burning the acquired Tokens.
      * It first checks if the pumping action is enabled by ensuring `pumpEnabled` is true, then disables pumping to prevent reentrancy.
      * After collecting fees, it calculates the pump amount and proceeds with a token swap if the amount is greater than zero.
      * Upon successful execution, a Pump event is emitted with the amount swapped and burned.
@@ -203,12 +204,12 @@ contract BellaToken is ERC20, ERC721Holder {
             })
         );
         // Calculate the pamp amount based on the wrapped native token balance and BPS
-        uint256 pampAmt = (quoteTokenAddress.getBalance() * PUMP_BPS) / BP;
+        uint256 pampAmt = (wrappedNative.getBalance() * pumpBPS) / BP;
         if (pampAmt > 0) {
             _checkPriceDeviation(); // Internal check for price deviation
 
-            // Perform the swap at the Bella V3 pool
-            bellaV3Pool.swap(
+            // Perform the swap at the V3 pool
+            V3Pool.swap(
                 address(this), //recipient
                 zeroForTokenIn,
                 int256(pampAmt),
@@ -216,7 +217,7 @@ contract BellaToken is ERC20, ERC721Holder {
                 new bytes(0)
             );
 
-            // Burn the acquired Bella tokens
+            // Burn the acquired tokens
             uint256 burnAmt = balanceOf(address(this));
             _burn(address(this), burnAmt);
 
@@ -229,22 +230,22 @@ contract BellaToken is ERC20, ERC721Holder {
         int256 amount1Delta,
         bytes calldata /*data*/
     ) external {
-        require(msg.sender == address(bellaV3Pool), "i-c");
+        require(msg.sender == address(V3Pool), "i-c");
         if (amount0Delta <= 0 && amount1Delta <= 0) {
             revert("invalid swap");
         }
 
         uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
-        quoteTokenAddress.safeTransfer(msg.sender, amountToPay);
+        wrappedNative.safeTransfer(msg.sender, amountToPay);
     }
 
     function _checkPriceDeviation() private view returns (int24 currentTick) {
-        (, currentTick, , , , , ) = bellaV3Pool.slot0();
+        (, currentTick, , , , , ) = V3Pool.slot0();
         uint32[] memory secondsAgo = new uint32[](2);
         secondsAgo[0] = TWAP_DURATION;
         secondsAgo[1] = 0;
 
-        (int56[] memory tickCumulatives, ) = bellaV3Pool.observe(secondsAgo);
+        (int56[] memory tickCumulatives, ) = V3Pool.observe(secondsAgo);
         int56 TWAP_DURATIONInt56 = int56(uint56(TWAP_DURATION));
 
         int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];

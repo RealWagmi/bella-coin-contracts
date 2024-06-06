@@ -50,7 +50,7 @@ const config: HardhatUserConfig = {
     disambiguatePaths: false,
     runOnCompile: true,
     strict: true,
-    only: ["BellaDiceGame"],
+    only: ["DiceGame", "V3Deployer"],
   },
   paths: {
     sources: './contracts',
@@ -68,7 +68,7 @@ const config: HardhatUserConfig = {
           evmVersion: 'paris',
           optimizer: {
             enabled: true,
-            runs: 333,
+            runs: 200,
           },
           metadata: {
             bytecodeHash: 'none',
@@ -82,10 +82,10 @@ const config: HardhatUserConfig = {
   },
   networks: {
     hardhat: {
-      chainId: 1,
+      chainId: 1088, 
       forking: {
-        url: 'https://rpc.ankr.com/eth',
-        blockNumber: 19682200,
+        url: "https://andromeda.metis.io/?owner=1088",
+        blockNumber: 16937000,
       },
       allowUnlimitedContractSize: false,
       allowBlocksWithSameTimestamp: true,
@@ -97,7 +97,7 @@ const config: HardhatUserConfig = {
         mnemonic: "test test test test test test test test test test test junk",
         path: "m/44'/60'/0'/0",
         initialIndex: 0,
-        count: 5,
+        count: 6,
         accountsBalance: '1000000000000000000000000000000000',
         passphrase: "",
       },
