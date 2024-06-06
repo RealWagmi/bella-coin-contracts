@@ -2,7 +2,7 @@
 all tests was in Metis fork
 ## Installation
 ```bash
-git clone --recursive https://github.com/RealWagmi/bella-coin-contracts.git
+git clone --recursive --branch Launchpad https://github.com/RealWagmi/bella-coin-contracts.git
 npm install
 mv .env_example .env
 npm run compile
