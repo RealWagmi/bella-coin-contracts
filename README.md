@@ -1,12 +1,12 @@
-# bella-coin-contracts
-
+# meme launchpad
+all tests was in Metis fork
 ## Installation
 ```bash
 git clone --recursive https://github.com/RealWagmi/bella-coin-contracts.git
 npm install
 mv .env_example .env
 npm run compile
-npm run test:all
+npx hardhat test test/testDice.ts 
 ```
 
 
