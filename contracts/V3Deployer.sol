@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import { RrpRequesterV0 } from "@api3/airnode-protocol/contracts/rrp/requesters/RrpRequesterV0.sol";
-import { Token, INonfungiblePositionManager, IUniswapV3Pool, TickMath, FullMath, TransferHelper, IWETH } from "./Token.sol";
+import { Token, INonfungiblePositionManager, IUniswapV3Pool, TickMath, FullMath, TransferHelper } from "./Token.sol";
 import { IUniswapV3Factory } from "./interfaces/uniswap/IUniswapV3Factory.sol";
 import { Babylonian } from "./vendor0.8/uniswap/Babylonian.sol";
 
@@ -108,6 +108,10 @@ contract V3Deployer is RrpRequesterV0, Ownable {
         ) external onlyOwner checkDeadline(_deadline) {
         if (activeGame != address(0)) revert GameAlreadyStarted();
         if (distributedGames[_diceGame]) revert GameAlreadyHaveBeenPlayed();
+        // Ensure non-zero addresses are provided for sponsor wallet and Airnode
+        require(_sponsorWallet != address(0), "z-a");
+        // Ensure  provided initial token rate is positive
+        require(_initialTokenRate > 1e6, "o-o");
         activeGame = _diceGame;
         //call dice game contract and start game
         (bool start, ) = address(_diceGame).call(
@@ -135,9 +139,10 @@ contract V3Deployer is RrpRequesterV0, Ownable {
 
     /**
     * @notice Starts a new game with specific parameters including sponsor wallet, Airnode details, initial token rate
+        WATCH OUT, SETTINGS CAN BE EXECUTED ONLY ONCE.
     * @param _keys unique hash for each token
     * @param _params tokens settings
-    * @param _liquidityBPS percent of game liquidity which will be distributed during token creation
+    * @param _liquidityBPS percent of game liquidity which will be distributed during tokens creation
     * @custom:modifier onlyOwner Restricts the function's execution to the contract's owner.
     */
 
@@ -184,8 +189,9 @@ contract V3Deployer is RrpRequesterV0, Ownable {
     }
 
     /// @notice Deploys Token and sets up a corresponding V3 pool. 
-    // This function must executed 5 times in row if owner previously added 5 mem tokens
-    // If you see event SomeoneAlreadyCreatedV3Pool - you must execute anti ddos actions
+    /// This function must be invoked 5 times in row if owner previously added 5 mem tokens
+    /// If you see event SomeoneAlreadyCreatedV3Pool you must execute anti ddos actions - invoke this function from another msg.sender,
+    /// or create V3Pool and initiaize it separately
     /// Can only be called after the game has ended and if the Token has not been set yet.
     /// @dev This function deploys a new Token ERC20  using 'CREATE2' for deterministic addresses,
     /// then checks if a Uniswap V3 pool with the token exists. If not, it creates one. If a pool does
@@ -451,13 +457,7 @@ contract V3Deployer is RrpRequesterV0, Ownable {
         }
     }
 
-
-
     function _blockTimestamp() private view returns (uint256) {
         return block.timestamp;
-    }
-
-    function _checkZero(uint256 amount) private pure {
-        require(amount > 0, "is zero");
     }
 }

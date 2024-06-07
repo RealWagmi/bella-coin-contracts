@@ -194,7 +194,7 @@ describe("Meme Launchpad", function () {
         it("should start the game with correct initial token rate and emit event", async function () {
             const deadline = (await time.latest()) + 60;
 
-            const initialTokenRate = ethers.parseUnits("1000", 18); // 1000 points per 1 WMETIS
+            const initialTokenRate = ethers.parseUnits("1000", 18); // 1000e18 points per 1e18 WMETIS
             await expect(CONTRACT_V3Deployer.createGame(
                 CONTRACT_DICEGAME.target,
                 sponsorWalletAddress,

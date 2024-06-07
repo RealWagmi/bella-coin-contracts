@@ -1,15 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.23;
 import "@openzeppelin/contracts/access/Ownable.sol";
-import { IUniswapV3Factory } from "./interfaces/uniswap/IUniswapV3Factory.sol";
 import { TransferHelper } from "./libraries/TransferHelper.sol";
-import { FullMath } from "./vendor0.8/uniswap/FullMath.sol";
 import { IWETH } from "./interfaces/IWETH.sol";
-
-interface IV3Deployer {
-    function redeem(address account, uint256 amount) external view returns(address);
-    function uniPosTokenId() external view returns (uint);
-}
 
 contract DiceGame is Ownable {
     using TransferHelper for address;
@@ -23,21 +16,20 @@ contract DiceGame is Ownable {
         uint256[] diceRollResult;
     }
 
-    uint8 public constant decimals = 18;
     uint256 public constant WIN69_MULTIPLIER = 10;
     uint256 public constant CALLBACK_GAS = 200000;
     uint256 public constant MAX_NUM_WORDS = 3;
     uint256 public constant DELIMITER = 1e18;
+    uint8 public constant decimals = 18;
+    string public constant name = "Points";
+    string public constant symbol = "PTS"; 
     
 
     uint256 public immutable gamePeriod;
     address public immutable wrappedNative;
-
-    IV3Deployer public immutable V3Deployer;
-    string public name = "Points";
-    string public symbol = "PTS"; 
+    address public immutable V3Deployer;
     address public sponsorWallet;
-    address public gameRngWallet;
+    address public immutable gameRngWallet;
 
     /// @notice Timestamp when the geme ower
     uint256 public endTime;
@@ -61,7 +53,7 @@ contract DiceGame is Ownable {
         if(_gamePeriod < 10 days || _gamePeriod > 180 days) revert GamePeriod();
         gamePeriod = _gamePeriod;
         wrappedNative = _wrappedNative;
-        V3Deployer = IV3Deployer(_V3Deployer);
+        V3Deployer = _V3Deployer;
         transferOwnership(_V3Deployer);
     }
 
@@ -106,11 +98,8 @@ contract DiceGame is Ownable {
         address _sponsorWallet,
         uint256 _initialTokenRate
     ) external payable onlyOwner  {
-        // Ensure the initial token rate is not already set and the provided initial token rate is positive
-        require(initialTokenRate == 0 && _initialTokenRate > 0, "o-o");
-        // Ensure non-zero addresses are provided for sponsor wallet and Airnode
-        require(_sponsorWallet != address(0), "z-a");
-
+        // Ensure the initial token rate is not already set 
+        require(initialTokenRate == 0, "o-o");
         // Set Airnode related information and the sponsor wallet to state variables
         sponsorWallet = _sponsorWallet;
         // Initialize the initial token rate and calculate the end time based on the current timestamp
@@ -421,7 +410,7 @@ contract DiceGame is Ownable {
 
     function sendLiquidity() external shouldGameIsOver  onlyOwner returns (uint amount, uint totalPTS){
         amount = wrappedNative.getBalance();
-        IWETH(wrappedNative).transfer(address(V3Deployer), amount);
+        wrappedNative.safeTransfer(V3Deployer, amount);
         totalPTS = totalSupply;
     }
 
@@ -434,7 +423,7 @@ contract DiceGame is Ownable {
         uint256 amount = balanceOf(msg.sender);
         _checkZero(amount);
         _burnPoints(msg.sender, amount);
-        (bool success, ) = address(V3Deployer).call(
+        (bool success, ) = V3Deployer.call(
             abi.encodeWithSignature(
                 "redeem(address,uint256)",
                 msg.sender,

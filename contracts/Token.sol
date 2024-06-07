@@ -7,7 +7,6 @@ import { IAirnodeRrpV0 } from "@api3/airnode-protocol/contracts/rrp/interfaces/I
 import { INonfungiblePositionManager } from "./interfaces/uniswap/INonfungiblePositionManager.sol";
 import { IUniswapV3Pool } from "./interfaces/uniswap/IUniswapV3Pool.sol";
 import { TransferHelper } from "./libraries/TransferHelper.sol";
-import { IWETH } from "./interfaces/IWETH.sol";
 import { TickMath } from "./vendor0.8/uniswap/TickMath.sol";
 import { FullMath } from "./vendor0.8/uniswap/FullMath.sol";
 
@@ -25,15 +24,13 @@ contract Token is ERC20, ERC721Holder {
 
     IAirnodeRrpV0 public immutable airnodeRrp;
     address public immutable V3Deployer;
-
-    bool public zeroForTokenIn;
-    address public wrappedNative;
-    INonfungiblePositionManager public positionManager;
+    address public immutable wrappedNative;
+    INonfungiblePositionManager public immutable positionManager;
     IUniswapV3Pool public V3Pool;
 
     bool public pumpEnabled;
-
-    address public sponsorWallet;
+    bool public zeroForTokenIn;
+    address public immutable sponsorWallet;
     bytes32 public constant endpointIdUint256 =
         0xffd1bbe880e7b2c662f6c8511b15ff22d12a4a35d5c8c17202893a5f10e25284;
     address public constant airnode = 0x224e030f03Cd3440D88BD78C9BF5Ed36458A1A25;
@@ -93,7 +90,7 @@ contract Token is ERC20, ERC721Holder {
     /**
      * @notice Initializes the V3Pool with the specified parameters.
      * @param zeroForOne If set to true, token0 will be used in the pool, otherwise token1.
-     * @param V3PoolAddress The address of the Uniswap V3 pool for Token.
+     * @param V3PoolAddress The address of the V3 pool for Token.
      * @param tokenId The token ID used for position management within the Uniswap V3 pool.
      */
     function initialize(bool zeroForOne, address V3PoolAddress, uint256 tokenId) external onlyV3Deployer {
