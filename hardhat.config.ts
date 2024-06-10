@@ -50,7 +50,7 @@ const config: HardhatUserConfig = {
     disambiguatePaths: false,
     runOnCompile: true,
     strict: true,
-    only: ["DiceGame", "V3Deployer"],
+    only: ["DiceGame", "V3Deployer", "FactoryForTestAirnode", "QrngExample"],
   },
   paths: {
     sources: './contracts',
@@ -155,6 +155,15 @@ const config: HardhatUserConfig = {
       gasPrice: 'auto',
       loggingEnabled: true,
     },
+    optimism: {
+      url: `https://opt-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+      accounts: [`${process.env.PRIVATE_KEY}`],
+      chainId: 10,
+      gas: 'auto',
+      gasMultiplier: 1.2,
+      gasPrice: 'auto',
+      loggingEnabled: true,
+    },
     kava: {
       url: "https://evm.kava.io", // public infura endpoint
       chainId: 2222,
@@ -183,6 +192,7 @@ const config: HardhatUserConfig = {
       bsc: `${process.env.BSCSCAN_API_KEY}`,
       avalanche: `${process.env.AVASCAN_API_KEY}`,
       polygon: `${process.env.POLIGONSCAN_API_KEY}`,
+      optimisticEthereum: `${process.env.OPTIMISTICSCAN_API_KEY}`,
       opera: `${process.env.FTMSCAN_API_KEY}`,
       arbitrumOne: `${process.env.ARBISCAN_API_KEY}`,
       metis: "metis",

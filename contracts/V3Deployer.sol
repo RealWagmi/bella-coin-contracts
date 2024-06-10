@@ -51,20 +51,19 @@ contract V3Deployer is RrpRequesterV0, Ownable {
     mapping(address=>Info) gamesInfo;
     mapping(address=>bool) public distributedGames;
 
-    constructor(
+    constructor(                    
         address _airnodeRrpAddress, 
         address _positionManagerAddress, 
-        address _factoryAddress, 
-        address _wrappedNative) RrpRequesterV0(_airnodeRrpAddress) {
+        address _factoryAddress,            
+        address _wrappedNative) RrpRequesterV0(_airnodeRrpAddress) { 
         positionManager = INonfungiblePositionManager(_positionManagerAddress);
         factory = IUniswapV3Factory(_factoryAddress);
         wrappedNative = _wrappedNative;
     }
 
-
     event Redeem(address token, address user, uint256 amount);
     event TokenDeployed(address memeToken, address V3Pool);
-    event NewGameStarted(address diceGame, uint startAt);
+    event NewGameStarted(address diceGame);
     event SomeoneAlreadyCreatedV3Pool(bytes32 key);
 
     error NameSymbolLength();
@@ -93,7 +92,7 @@ contract V3Deployer is RrpRequesterV0, Ownable {
     /**
     * @notice Starts a new game with specific parameters including sponsor wallet, Airnode details, initial token rate
     * @param _diceGame game address SC.
-    * @param _sponsorWallet The address of the sponsor who will provide funds for the QRNG.
+    * @param _sponsorWallet The address of the sponsor who will provide funds for the RrpRequests.
     * @param _initialTokenRate The initial rate used within the game logic, set at the start and never changed afterward.
     * @param _deadline A timestamp until which the game can be initiated. Prevents starting the game too late.
     * @custom:modifier onlyOwner Restricts the function's execution to the contract's owner.
@@ -105,7 +104,7 @@ contract V3Deployer is RrpRequesterV0, Ownable {
             address _sponsorWallet, 
             uint _initialTokenRate, 
             uint _deadline
-        ) external onlyOwner checkDeadline(_deadline) {
+        ) external payable onlyOwner checkDeadline(_deadline) {
         if (activeGame != address(0)) revert GameAlreadyStarted();
         if (distributedGames[_diceGame]) revert GameAlreadyHaveBeenPlayed();
         // Ensure non-zero addresses are provided for sponsor wallet and Airnode
@@ -113,16 +112,18 @@ contract V3Deployer is RrpRequesterV0, Ownable {
         // Ensure  provided initial token rate is positive
         require(_initialTokenRate > 1e6, "o-o");
         activeGame = _diceGame;
+
         //call dice game contract and start game
-        (bool start, ) = address(_diceGame).call(
-            abi.encodeWithSignature("startGame(address,uint256)", 
-                _sponsorWallet,
+        (bool start, ) = address(_diceGame).call{value: msg.value / 2}(
+            abi.encodeWithSignature("startGame(uint256)", 
                 _initialTokenRate
             )
         );
         require(start);
+        (bool check, ) = _sponsorWallet.call{value: msg.value / 2}("");
+        require(check);
         sponsorWallet = _sponsorWallet;
-        emit NewGameStarted(_diceGame, block.timestamp);
+        emit NewGameStarted(_diceGame);
     }
 
     /**

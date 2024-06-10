@@ -28,7 +28,6 @@ contract DiceGame is Ownable {
     uint256 public immutable gamePeriod;
     address public immutable wrappedNative;
     address public immutable V3Deployer;
-    address public sponsorWallet;
     address public immutable gameRngWallet;
 
     /// @notice Timestamp when the geme ower
@@ -50,7 +49,8 @@ contract DiceGame is Ownable {
 
     constructor(address _gameRngWalletAddress, uint _gamePeriod, address _V3Deployer, address _wrappedNative)  {
         gameRngWallet = _gameRngWalletAddress;
-        if(_gamePeriod < 10 days || _gamePeriod > 180 days) revert GamePeriod();
+        if(_gameRngWalletAddress == address(0) || _V3Deployer == address(0) || _wrappedNative == address(0)) revert ZeroValue();
+        if(_gamePeriod < 2 hours || _gamePeriod > 180 days) revert GamePeriod();
         gamePeriod = _gamePeriod;
         wrappedNative = _wrappedNative;
         V3Deployer = _V3Deployer;
@@ -87,28 +87,19 @@ contract DiceGame is Ownable {
     }
 
     /**
-     * @notice Starts a new game with specific parameters including sponsor wallet, Airnode details, initial token rate, etc.
-     * @dev Requires non-zero addresses for sponsor,
+     * @notice Starts a new game with specific parameters Airnode details, initial token rate, etc.
      * non-zero initial token rate, and game not already started (initialTokenRate == 0).
-     * @param _sponsorWallet The address of the sponsor who will provide funds for the QRNG.
      * @param _initialTokenRate The initial rate used within the game logic, set at the start and never changed afterward.
      * @custom:modifier onlyOwner Restricts the function's execution to the contract's owner.
      */
-    function startGame(
-        address _sponsorWallet,
-        uint256 _initialTokenRate
-    ) external payable onlyOwner  {
+    function startGame(uint256 _initialTokenRate) external payable onlyOwner  {
         // Ensure the initial token rate is not already set 
         require(initialTokenRate == 0, "o-o");
-        // Set Airnode related information and the sponsor wallet to state variables
-        sponsorWallet = _sponsorWallet;
         // Initialize the initial token rate and calculate the end time based on the current timestamp
         initialTokenRate = _initialTokenRate;
         endTime = block.timestamp + gamePeriod;
         if (msg.value > 0) {
-            (bool check, ) = sponsorWallet.call{value: msg.value / 2}("");
-            require(check);
-            (bool success, ) = gameRngWallet.call{value: msg.value / 2}("");
+            (bool success, ) = gameRngWallet.call{value: msg.value}("");
             require(success); 
         }
     }

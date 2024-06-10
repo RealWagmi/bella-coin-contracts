@@ -55,6 +55,7 @@ describe("Meme Launchpad", function () {
     let CONTRACT_WMETIS: IWETH;
     let CONTRACT_V3Deployer: V3Deployer;
     let CONTRACT_DICEGAME: DiceGame;
+    let CONTRACT_SECOND_DICEGAME: DiceGame;
     let memeToken: Token;
     let CONTRACT_V3FACTORY: IUniswapV3Factory;
     let CONTRACT_POSITION_MANAGER: INonfungiblePositionManager;
@@ -201,7 +202,7 @@ describe("Meme Launchpad", function () {
                 initialTokenRate,
                 deadline
             )).to.emit(CONTRACT_V3Deployer, "NewGameStarted")
-                .withArgs(CONTRACT_DICEGAME.target, await time.latest());
+                .withArgs(CONTRACT_DICEGAME.target);
 
             expect(await CONTRACT_V3Deployer.activeGame()).to.eq(CONTRACT_DICEGAME.target);
             expect(await CONTRACT_DICEGAME.initialTokenRate()).to.equal(initialTokenRate);
@@ -1428,5 +1429,42 @@ describe("Meme Launchpad", function () {
             expect(await memeToken.pumpEnabled()).to.be.false;
         });
     });
+
+    describe("Check next game creation", () => {
+        it("check that we can create new game again after all", async () => {
+            const DiceGame = await ethers.getContractFactory("DiceGame");
+            //address _gameRngWalletAddress, uint _gamePeriod, IV3Deployer _V3Deployer
+            CONTRACT_SECOND_DICEGAME = await DiceGame.deploy(
+                operator.address,
+                10 * SEC_IN_DAY,
+                CONTRACT_V3Deployer.target,
+                WMETIS_ADDRESS
+            );
+            await CONTRACT_SECOND_DICEGAME.waitForDeployment();
+                
+            
+            const deadline = (await time.latest()) + 60;
+
+            const initialTokenRate = ethers.parseUnits("100", 18); // 100e18 points per 1e18 WMETIS
+            await expect(CONTRACT_V3Deployer.createGame(
+                CONTRACT_SECOND_DICEGAME.target,
+                sponsorWalletAddress,
+                initialTokenRate,
+                deadline
+            )).to.emit(CONTRACT_V3Deployer, "NewGameStarted")
+                .withArgs(CONTRACT_SECOND_DICEGAME.target);
+
+            expect(await CONTRACT_V3Deployer.activeGame()).to.eq(CONTRACT_SECOND_DICEGAME.target);
+            expect(await CONTRACT_SECOND_DICEGAME.initialTokenRate()).to.equal(initialTokenRate);
+            // // Verify endTime is set correctly, taking into account block timestamp variability
+            const blockTimestamp = await time.latest();
+            const GAME_PERIOD = await CONTRACT_SECOND_DICEGAME.gamePeriod();
+            expect(await CONTRACT_SECOND_DICEGAME.endTime()).to.be.closeTo(blockTimestamp + Number(GAME_PERIOD), 5);
+            expect(await CONTRACT_V3Deployer.distributedGames(CONTRACT_SECOND_DICEGAME.target)).to.be.false;
+        });
+        
+    });
+
+
 })
 
