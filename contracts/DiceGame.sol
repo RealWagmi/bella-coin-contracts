@@ -349,7 +349,6 @@ contract DiceGame is Ownable {
             round.totalWinnings = totalWinnings;
             _mintPoints(round.user, totalWinnings);
         }
-
     }
 
     /**

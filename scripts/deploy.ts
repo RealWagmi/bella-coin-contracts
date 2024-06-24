@@ -87,9 +87,9 @@ async function main() {
     //   timestamp: string;
     // };
     // const deadline = parseInt(latestBlock.timestamp, 16) + 120;
-    // await sleep(1000);
     // console.log("starting game...", deadline);
     // const initialTokenRate = ethers.parseUnits("1000000", 18); //  /// 1000 points for 0.001 WETH (3.6$)
+
     // await diceGame.startGame(sponsorWalletAddress, initialTokenRate, deadline, { value: SEND_VALUE });
 
     // console.log("game started!");

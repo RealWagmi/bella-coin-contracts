@@ -111,13 +111,13 @@ const config: HardhatUserConfig = {
       accounts: [`${process.env.PRIVATE_KEY}`],
       loggingEnabled: true,
     },
-    bsc: {
+    bscMainnet: {
       url: "https://bsc-dataseed1.binance.org",
       chainId: 56,
       accounts: [`${process.env.PRIVATE_KEY}`],
       gas: 'auto',
       gasMultiplier: 1.2,
-      gasPrice: 5000000000,
+      // gasPrice: 5000000000,
       loggingEnabled: true,
     },
     avalanche: {

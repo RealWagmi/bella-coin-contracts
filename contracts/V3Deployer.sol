@@ -20,7 +20,6 @@ contract V3Deployer is RrpRequesterV0, Ownable {
 
     uint16 private constant observationCardinalityNext = 150;
     uint256 private constant BP = 10_000;
- 
     /// @notice Wrapped native token on current network
     address public immutable wrappedNative;
     address public sponsorWallet;
@@ -62,7 +61,7 @@ contract V3Deployer is RrpRequesterV0, Ownable {
     }
 
     event Redeem(address token, address user, uint256 amount);
-    event TokenDeployed(address memeToken, address V3Pool);
+    event TokenDeployed(address memeToken, address V3Pool, bytes32 key);
     event NewGameStarted(address diceGame);
     event SomeoneAlreadyCreatedV3Pool(bytes32 key);
 
@@ -162,7 +161,7 @@ contract V3Deployer is RrpRequesterV0, Ownable {
             TokenInfo storage newToken = gameInfo.tokens[_keys[i]];
             if(_params[i].tokenBPS == 0) revert TokenBPS();
             if(newToken.pumpInterval != 0) revert TokenAlreadyExists();
-            if(_params[i].pumpInterval < 1 days) revert PumpInterval(); 
+            if(_params[i].pumpInterval == 0) revert PumpInterval(); 
             if(_params[i].pumpBPS > 5000 || _params[i].pumpBPS < 500) revert PumpBPS();
             if(bytes(_params[i].name).length < 3 || bytes(_params[i].symbol).length < 3 ) revert NameSymbolLength();
             unchecked {
@@ -220,14 +219,14 @@ contract V3Deployer is RrpRequesterV0, Ownable {
                     IUniswapV3Pool(_V3Pool).initialize(sqrtPriceX96);
                     token.V3Pool = IUniswapV3Pool(_V3Pool);
                     _deployToken(token, token_, key, _wrappedNative);
-                    emit TokenDeployed(token_, _V3Pool);
+                    emit TokenDeployed(token_, _V3Pool, key);
                 } else {
                     emit SomeoneAlreadyCreatedV3Pool(key);
                     (uint160 sqrtPriceX96current, , , , , , ) = IUniswapV3Pool(_V3Pool).slot0();
                     if (sqrtPriceX96current == sqrtPriceX96) {
                         token.V3Pool = IUniswapV3Pool(_V3Pool);
                         _deployToken(token, token_, key, _wrappedNative);
-                        emit TokenDeployed(token_, _V3Pool);
+                        emit TokenDeployed(token_, _V3Pool, key);
                     }
                 }
                 break;

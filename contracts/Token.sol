@@ -141,7 +141,7 @@ contract Token is ERC20, ERC721Holder {
         bytes32 requestId = airnodeRrp.makeFullRequest(
             airnode,
             endpointIdUint256,
-            V3Deployer, //sponsor
+            V3Deployer, //sponsor who execute setSponsorshipStatus(true)
             sponsorWallet,
             address(this),
             this.fulfillRandomWords.selector,

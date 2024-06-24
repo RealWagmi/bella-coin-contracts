@@ -719,7 +719,8 @@ describe("Meme Launchpad", function () {
                 {
                     name: "Test",
                     symbol: "TST",
-                    pumpInterval: 0.9 * SEC_IN_DAY,
+                    // pumpInterval: 0.9 * SEC_IN_DAY,
+                    pumpInterval: 0,
                     pumpBPS: pumpBPS,
                     tokenBPS: BP,
                     V3_fee: 10000
@@ -1099,6 +1100,7 @@ describe("Meme Launchpad", function () {
                 .filter(parsedLog => parsedLog.name === "SomeoneAlreadyCreatedV3Pool");
             expect(event[0]?.args[0]).to.eq(keys[0])
             // console.log("event", event);
+            await CONTRACT_V3Deployer.connect(bob).deployTokens();
 
             const gameInfo = await CONTRACT_V3Deployer.getGameInfo(ethers.ZeroAddress);
             // console.log(gameInfo[4]);

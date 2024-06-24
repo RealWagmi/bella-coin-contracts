@@ -55,8 +55,8 @@ async function main() {
 
     const first = await CONTRACT_FACTORY.games(1);
     const second = await CONTRACT_FACTORY.games(2);
-    console.log("firs game", first); // 0x854af468EE1E3CbBdF4448D336D094Bfc3bbD9D6
-    console.log("second game", second); // 0x3DfDc940AAa699c15AAad5Ad9416d80d0fb7fa14
+    console.log("firs game", first); 
+    console.log("second game", second); 
 
     await hardhat.run("verify:verify", {
         address: first,
