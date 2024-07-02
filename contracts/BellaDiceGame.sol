@@ -179,10 +179,9 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     function getUserLastGameInfo(
         address user
     ) public view returns (uint256 id, GameRound memory round) {
-        uint256[] memory ids = userGameIds[user];
-        uint256 length = ids.length;
+        uint256 length = userGameIds[user].length;
         if (length > 0) {
-            id = ids[length - 1];
+            id = userGameIds[user][length - 1];
             round = gameRounds[id];
         }
     }
