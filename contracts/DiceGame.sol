@@ -92,7 +92,7 @@ contract DiceGame is Ownable {
      * @param _initialTokenRate The initial rate used within the game logic, set at the start and never changed afterward.
      * @custom:modifier onlyOwner Restricts the function's execution to the contract's owner.
      */
-    function startGame(uint256 _initialTokenRate) external payable onlyOwner  {
+    function startGame(uint _initialTokenRate) external payable onlyOwner  {
         // Ensure the initial token rate is not already set 
         require(initialTokenRate == 0, "o-o");
         // Initialize the initial token rate and calculate the end time based on the current timestamp
@@ -136,10 +136,9 @@ contract DiceGame is Ownable {
     function getUserLastGameInfo(
         address user
     ) public view returns (uint256 id, GameRound memory round) {
-        uint256[] memory ids = userGameIds[user];
-        uint256 length = ids.length;
+        uint256 length = userGameIds[user].length;
         if (length > 0) {
-            id = ids[length - 1];
+            id = userGameIds[user][length - 1];
             round = gameRounds[id];
         }
     }

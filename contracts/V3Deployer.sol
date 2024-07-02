@@ -110,6 +110,7 @@ contract V3Deployer is RrpRequesterV0, Ownable {
         require(_sponsorWallet != address(0), "z-a");
         // Ensure  provided initial token rate is positive
         require(_initialTokenRate > 1e6, "o-o");
+        require(_initialTokenRate < 1e30, "o-o");
         activeGame = _diceGame;
 
         //call dice game contract and start game

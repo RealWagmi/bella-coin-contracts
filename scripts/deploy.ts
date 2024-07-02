@@ -12,13 +12,14 @@ async function main() {
 
     console.log(`[${network}] deployer address: ${deployer.address}`);
 
-    const SEC_IN_HOUR = 3600;
+    const SEC_IN_HOUR = 3600n;
     let AirnodeRrpV0Address = "";
     let UNDERLYING_POSITION_MANAGER_ADDRESS = "";
     let UNISWAP_V3_FACTORY = "";
     let SEND_VALUE; //0.002
     let QRNG_OPERATOR_ADDRESS = "";
     let WRAPPED_NATIVE = "";
+    let GAME_PERIOD;
 
     if (network === "metis") {
         //https://docs.api3.org/reference/qrng/chains.html#anu
@@ -37,6 +38,8 @@ async function main() {
         UNISWAP_V3_FACTORY = "0xC49c177736107fD8351ed6564136B9ADbE5B1eC3";
         QRNG_OPERATOR_ADDRESS = "0x63795e0f9223Ec4BFeF5fBE3dbf9331F1C57cC5c";
         WRAPPED_NATIVE = "0x4200000000000000000000000000000000000006";
+        SEND_VALUE = ethers.parseEther("0.002"); // 7 $  half for sponsorWallet and half for gameRngWallet
+        GAME_PERIOD = 24n * SEC_IN_HOUR * 14n;
     }
 
 
@@ -49,7 +52,6 @@ async function main() {
         WRAPPED_NATIVE
     );
     await CONTRACT_V3Deployer.waitForDeployment();
-
     console.log(`V3Deployer  deployed to ${CONTRACT_V3Deployer.target}`);
 
     await sleep(10000);
@@ -58,43 +60,38 @@ async function main() {
     //address _gameRngWalletAddress, uint _gamePeriod, IV3Deployer _V3Deployer
     const CONTRACT_DICEGAME = await DiceGame.deploy(
         QRNG_OPERATOR_ADDRESS,
-        5 * SEC_IN_HOUR,
+        //@ts-ignore
+        GAME_PERIOD,
         CONTRACT_V3Deployer.target,
         WRAPPED_NATIVE
     );
     await CONTRACT_DICEGAME.waitForDeployment();
-
     console.log(`DICEGAME  deployed to ${CONTRACT_DICEGAME.target}`);
 
     await sleep(10000);
 
     const quintessenceXpub =
         "xpub6CyZcaXvbnbqGfqqZWvWNUbGvdd5PAJRrBeAhy9rz1bbnFmpVLg2wPj1h6TyndFrWLUG3kHWBYpwacgCTGWAHFTbUrXEg6LdLxoEBny2YDz";
-
     const quintessenceAirnodeAddress = "0x224e030f03Cd3440D88BD78C9BF5Ed36458A1A25"; // constant in TOKEN SC
-
     const sponsorWalletAddress = deriveSponsorWalletAddress(
         quintessenceXpub,
         quintessenceAirnodeAddress,
         CONTRACT_V3Deployer.target.toString() // used as the sponsor
     );
-
     console.log(`sponsorWalletAddress ${sponsorWalletAddress}`);
 
     await sleep(10000);
 
-    // const latestBlock = (await hardhat.network.provider.send("eth_getBlockByNumber", ["latest", false])) as {
-    //   timestamp: string;
-    // };
-    // const deadline = parseInt(latestBlock.timestamp, 16) + 120;
-    // console.log("starting game...", deadline);
-    // const initialTokenRate = ethers.parseUnits("1000000", 18); //  /// 1000 points for 0.001 WETH (3.6$)
+    const latestBlock = (await hardhat.network.provider.send("eth_getBlockByNumber", ["latest", false])) as {
+        timestamp: string;
+    };
+    const deadline = parseInt(latestBlock.timestamp, 16) + 120;
+    console.log("starting game...", deadline);
+    const initialTokenRate = ethers.parseUnits("1000000", 18); //  /// 1000 points for 0.001 WETH (3.6$)
+    await CONTRACT_V3Deployer.createGame(CONTRACT_DICEGAME.target, sponsorWalletAddress, initialTokenRate, deadline, { value: SEND_VALUE });
+    console.log("game started!");
 
-    // await diceGame.startGame(sponsorWalletAddress, initialTokenRate, deadline, { value: SEND_VALUE });
-
-    // console.log("game started!");
-
-    // await sleep(30000);
+    await sleep(30000);
 
     await hardhat.run("verify:verify", {
         address: CONTRACT_V3Deployer.target,
@@ -110,7 +107,7 @@ async function main() {
         address: CONTRACT_DICEGAME.target,
         constructorArguments: [
             QRNG_OPERATOR_ADDRESS,
-            5 * SEC_IN_HOUR,
+            GAME_PERIOD,
             CONTRACT_V3Deployer.target,
             WRAPPED_NATIVE
         ],
