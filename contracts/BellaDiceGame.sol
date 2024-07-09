@@ -176,7 +176,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     /// @return round The GameRound struct containing the details of the game round
     function getUserLastGameInfo(
         address user
-    ) public view returns (uint256 id, GameRound memory round) {
+    ) public view returns (bytes32 id, GameRound memory round) {
         uint256 length = userGameIds[user].length;
         if (length > 0) {
             id = userGameIds[user][length - 1];
