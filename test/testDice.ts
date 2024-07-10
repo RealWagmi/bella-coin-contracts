@@ -1364,7 +1364,7 @@ describe("Meme Launchpad", function () {
             let currentTimestamp = await time.latest();
             const PUMP_INTERVAL = await memeToken.pumpInterval();
 
-            await time.increaseTo(BigInt(currentTimestamp) + PUMP_INTERVAL);
+            await time.increaseTo(BigInt(currentTimestamp) + PUMP_INTERVAL+1n);
 
             expect(await memeToken.isTimeToPump()).to.be.equal(true);
 

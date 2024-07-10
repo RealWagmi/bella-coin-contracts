@@ -157,30 +157,32 @@ contract V3Deployer is RrpRequesterV0, Ownable {
         if(_liquidityBPS < 1000 || _liquidityBPS > 8000) revert LiquidityBPS();
         gameInfo.liquidityBPS = _liquidityBPS; 
         uint totalTokensBPS;
+        TokenParams memory _p;
         for(uint i; i < keysLength;) {
+            _p = _params[i];
             //add new token
             TokenInfo storage newToken = gameInfo.tokens[_keys[i]];
-            if(_params[i].tokenBPS == 0) revert TokenBPS();
+            if(_p.tokenBPS == 0) revert TokenBPS();
             if(newToken.pumpInterval != 0) revert TokenAlreadyExists();
-            if(_params[i].pumpInterval == 0) revert PumpInterval(); 
-            if(_params[i].pumpBPS > 5000 || _params[i].pumpBPS < 500) revert PumpBPS();
-            if(bytes(_params[i].name).length < 3 || bytes(_params[i].symbol).length < 3 ) revert NameSymbolLength();
+            if(_p.pumpInterval == 0) revert PumpInterval(); 
+            if(_p.pumpBPS > 5000 || _p.pumpBPS < 500) revert PumpBPS();
+            if(bytes(_p.name).length < 3 || bytes(_p.symbol).length < 3 ) revert NameSymbolLength();
             unchecked {
-                totalTokensBPS += _params[i].tokenBPS;
+                totalTokensBPS += _p.tokenBPS;
             }
-            newToken.name = _params[i].name;
-            newToken.symbol = _params[i].symbol;
-            newToken.pumpInterval = _params[i].pumpInterval; 
-            newToken.pumpBPS = _params[i].pumpBPS; 
-            newToken.tokenBPS = _params[i].tokenBPS;
+            newToken.name = _p.name;
+            newToken.symbol = _p.symbol;
+            newToken.pumpInterval = _p.pumpInterval; 
+            newToken.pumpBPS = _p.pumpBPS; 
+            newToken.tokenBPS = _p.tokenBPS;
             //check supported fee
             (bool success, bytes memory response) = address(factory).staticcall(
-                abi.encodeWithSignature("feeAmountTickSpacing(uint24)", _params[i].V3_fee)
+                abi.encodeWithSignature("feeAmountTickSpacing(uint24)", _p.V3_fee)
             );
             require(success && response.length == 32); 
             int24 tickSpacing = abi.decode(response, (int24));
             if(tickSpacing == 0) revert UnsupportedFee();
-            newToken.V3_fee = _params[i].V3_fee;
+            newToken.V3_fee = _p.V3_fee;
             newToken.tickSpacing = tickSpacing;
             //add key 
             gameInfo.keys.push(_keys[i]);
@@ -367,18 +369,9 @@ contract V3Deployer is RrpRequesterV0, Ownable {
         TokenInfo storage token = gameInfo.tokens[key];
         _token = computeTokenAddress(deployer, token, key);
         bool zeroForToken = _token < wrappedNative;
-        uint256 partOfmemeToken;
-        uint256 partOfWrapNative;
-        uint liquidityBPS = gameInfo.liquidityBPS;
-        unchecked {
-                            //      tokenGamePoints
-            partOfmemeToken = (gameInfo.PTStotalSupply * token.tokenBPS / BP) * liquidityBPS / BP; 
-                            //      tokenLiquidity
-            partOfWrapNative = (gameInfo.gameLiquidity * token.tokenBPS / BP) * liquidityBPS / BP; 
-        }
         _sqrtPriceX96 = zeroForToken
-            ? uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, partOfWrapNative, partOfmemeToken)))
-            : uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, partOfmemeToken, partOfWrapNative)));
+            ? uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, gameInfo.gameLiquidity, gameInfo.PTStotalSupply)))
+            : uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, gameInfo.PTStotalSupply, gameInfo.gameLiquidity)));
     }
 
     /// This can be used to predict the address before deployment.  
