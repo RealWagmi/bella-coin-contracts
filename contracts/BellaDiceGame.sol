@@ -284,12 +284,13 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     ) public view returns (bool zeroForBella, uint160 _sqrtPriceX96, address _bellaToken) {
         _bellaToken = _computeBellaAddress(deployer);
         zeroForBella = _bellaToken < quoteToken;
-        uint256 halfBella = totalSupply / 2;
-        uint256 halfQuoteToken = quoteToken.getBalance() / 2;
+
+        uint256 total = totalSupply;
+        uint256 quoteTokenBalance = quoteToken.getBalance();
 
         _sqrtPriceX96 = zeroForBella
-            ? uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, halfQuoteToken, halfBella)))
-            : uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, halfBella, halfQuoteToken)));
+            ? uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, quoteTokenBalance, total)))
+            : uint160(Babylonian.sqrt(FullMath.mulDiv(1 << 192, total, quoteTokenBalance)));
     }
 
     /// @notice Allows a user to place a bet on a dice roll(s), record the bet details, and request randomness
