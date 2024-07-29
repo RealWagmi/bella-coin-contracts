@@ -9,9 +9,18 @@ async function main() {
     const [deployer] = await ethers.getSigners();
     const network = hardhat.network.name;
     console.log(`[${network}] deployer address: ${deployer.address}`);
-    console.log("current block number", await ethers.provider.getBlockNumber()); 
+    console.log("current block number", await ethers.provider.getBlockNumber());
 
-    const AirnodeRrpV0Address = "0xa0AD79D995DdeeB18a14eAef56A549A04e3Aa1Bd";
+    let AirnodeRrpV0Address = "";
+    if (network === "optimism") {
+        AirnodeRrpV0Address = "0xa0AD79D995DdeeB18a14eAef56A549A04e3Aa1Bd";
+    }
+    if (network === "base") {
+        AirnodeRrpV0Address = "0xa0AD79D995DdeeB18a14eAef56A549A04e3Aa1Bd";
+    }
+
+
+
     const FactoryForTestAirnode = await ethers.getContractFactory("FactoryForTestAirnode");
     const CONTRACT_FACTORY = await FactoryForTestAirnode.deploy(AirnodeRrpV0Address);
     await CONTRACT_FACTORY.waitForDeployment();
@@ -31,7 +40,7 @@ async function main() {
         CONTRACT_FACTORY.target.toString() // used as the sponsor
     );
 
-    console.log(`sponsorWalletAddress ${sponsorWalletAddress}`); 
+    console.log(`sponsorWalletAddress ${sponsorWalletAddress}`);
 
     await sleep(10000);
 
@@ -55,8 +64,8 @@ async function main() {
 
     const first = await CONTRACT_FACTORY.games(1);
     const second = await CONTRACT_FACTORY.games(2);
-    console.log("firs game", first); 
-    console.log("second game", second); 
+    console.log("firs game", first);
+    console.log("second game", second);
 
     await hardhat.run("verify:verify", {
         address: first,

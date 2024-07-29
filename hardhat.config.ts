@@ -120,6 +120,15 @@ const config: HardhatUserConfig = {
       // gasPrice: 5000000000,
       loggingEnabled: true,
     },
+    base: {
+      url: "https://mainnet.base.org",
+      chainId: 8453,
+      accounts: [`${process.env.PRIVATE_KEY}`],
+      gas: 'auto',
+      gasMultiplier: 1.1,
+      // gasPrice: 5000000000,
+      loggingEnabled: true,
+    },
     avalanche: {
       url: "https://api.avax.network/ext/bc/C/rpc",
       chainId: 43114,
@@ -157,6 +166,7 @@ const config: HardhatUserConfig = {
     },
     optimism: {
       url: `https://opt-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+      // url: ` https://op-pokt.nodies.app`,
       accounts: [`${process.env.PRIVATE_KEY}`],
       chainId: 10,
       gas: 'auto',
@@ -195,6 +205,7 @@ const config: HardhatUserConfig = {
       optimisticEthereum: `${process.env.OPTIMISTICSCAN_API_KEY}`,
       opera: `${process.env.FTMSCAN_API_KEY}`,
       arbitrumOne: `${process.env.ARBISCAN_API_KEY}`,
+      base: `${process.env.BASESCAN_API_KEY}`,
       metis: "metis",
     },
     customChains: [

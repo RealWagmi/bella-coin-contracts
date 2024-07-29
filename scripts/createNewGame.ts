@@ -21,6 +21,8 @@ async function main() {
     let QRNG_OPERATOR_ADDRESS = "";
     let WRAPPED_NATIVE = "";
     let GAME_PERIOD;
+    let CONTRACT_V3Deployer;
+    let sponsorWalletAddress = "";
 
     if (network === "metis") {
         //https://docs.api3.org/reference/qrng/chains.html#anu
@@ -40,22 +42,48 @@ async function main() {
         QRNG_OPERATOR_ADDRESS = "0x63795e0f9223Ec4BFeF5fBE3dbf9331F1C57cC5c";
         WRAPPED_NATIVE = "0x4200000000000000000000000000000000000006";
         SEND_VALUE = ethers.parseEther("0.002"); // 7 $  half for sponsorWallet and half for gameRngWallet
-        GAME_PERIOD = SEC_IN_DAY * 5n + (SEC_IN_DAY * 3n / 2n); // 5.5 days
+        GAME_PERIOD = SEC_IN_DAY * 5n + (SEC_IN_DAY * 3n / 2n); // 6.5 days
+        CONTRACT_V3Deployer = await ethers.getContractAt("V3Deployer", "0x73e9da1dc2fe5d0f69c479573ed089037007a8cc")
+        sponsorWalletAddress = "0xD364CAC39EA7251adF5a8F1c73e6ccD9ea5a121C";
     }
-
-
-    const V3Deployer = await ethers.getContractFactory("V3Deployer");
-    //address _airnodeRrpAddress, address _positionManagerAddress, address _factoryAddress, address _wrappedNative
-    const CONTRACT_V3Deployer = await V3Deployer.deploy(
-        AirnodeRrpV0Address,
-        UNDERLYING_POSITION_MANAGER_ADDRESS,
-        UNISWAP_V3_FACTORY,
-        WRAPPED_NATIVE
-    );
-    await CONTRACT_V3Deployer.waitForDeployment();
-    console.log(`V3Deployer  deployed to ${CONTRACT_V3Deployer.target}`);
-
     await sleep(10000);
+
+    let tx = await CONTRACT_V3Deployer!.transferLiquidity()
+    await tx.wait()
+    console.log("transferLiquidity done");
+
+    const liquidityBPS = 4000n;
+    const pumpBPS = 2500n;
+    const tokenParams = [
+        {
+            name: "Test1",
+            symbol: "TST1",
+            pumpInterval: 5n * SEC_IN_DAY,
+            pumpBPS: pumpBPS,
+            tokenBPS: 10000n,
+            V3_fee: 10000
+        },
+    ];
+
+    tx = await CONTRACT_V3Deployer!.setTokensParams(
+        [ethers.encodeBytes32String("example1")],
+        tokenParams,
+        liquidityBPS
+    );
+    await tx.wait()
+    console.log("setTokensParams done");
+
+    tx = await CONTRACT_V3Deployer!.deployTokens()
+    await tx.wait()
+    console.log("deploy token done");
+
+    tx = await CONTRACT_V3Deployer!.distributeLiquidity()
+    await tx.wait()
+    console.log("deploy token done");
+
+    console.log("active game", await CONTRACT_V3Deployer!.activeGame());
+    await sleep(10000);
+
 
     const DiceGame = await ethers.getContractFactory("DiceGame");
     //address _gameRngWalletAddress, uint _gamePeriod, IV3Deployer _V3Deployer
@@ -63,23 +91,11 @@ async function main() {
         QRNG_OPERATOR_ADDRESS,
         //@ts-ignore
         GAME_PERIOD,
-        CONTRACT_V3Deployer.target,
+        CONTRACT_V3Deployer!.target,
         WRAPPED_NATIVE
     );
     await CONTRACT_DICEGAME.waitForDeployment();
     console.log(`DICEGAME  deployed to ${CONTRACT_DICEGAME.target}`);
-
-    await sleep(10000);
-
-    const quintessenceXpub =
-        "xpub6CyZcaXvbnbqGfqqZWvWNUbGvdd5PAJRrBeAhy9rz1bbnFmpVLg2wPj1h6TyndFrWLUG3kHWBYpwacgCTGWAHFTbUrXEg6LdLxoEBny2YDz";
-    const quintessenceAirnodeAddress = "0x224e030f03Cd3440D88BD78C9BF5Ed36458A1A25"; // constant in TOKEN SC
-    const sponsorWalletAddress = deriveSponsorWalletAddress(
-        quintessenceXpub,
-        quintessenceAirnodeAddress,
-        CONTRACT_V3Deployer.target.toString() // used as the sponsor
-    );
-    console.log(`sponsorWalletAddress ${sponsorWalletAddress}`);
 
     await sleep(10000);
 
@@ -91,30 +107,20 @@ async function main() {
     const initialTokenRate = ethers.parseUnits("1000000", 18); //  /// 1000 points for 0.001 WETH (3.6$)
 
 
-    await CONTRACT_V3Deployer.createGame(CONTRACT_DICEGAME.target, sponsorWalletAddress, initialTokenRate, deadline, { value: SEND_VALUE });
+    await CONTRACT_V3Deployer!.createGame(CONTRACT_DICEGAME.target, sponsorWalletAddress, initialTokenRate, deadline, { value: SEND_VALUE });
     console.log("game started!");
 
-    console.log(await CONTRACT_V3Deployer.activeGame());
+    console.log("active game", await CONTRACT_V3Deployer!.activeGame());
 
 
     await sleep(30000);
-
-    await hardhat.run("verify:verify", {
-        address: CONTRACT_V3Deployer.target,
-        constructorArguments: [
-            AirnodeRrpV0Address,
-            UNDERLYING_POSITION_MANAGER_ADDRESS,
-            UNISWAP_V3_FACTORY,
-            WRAPPED_NATIVE,
-        ],
-    });
 
     await hardhat.run("verify:verify", {
         address: CONTRACT_DICEGAME.target,
         constructorArguments: [
             QRNG_OPERATOR_ADDRESS,
             GAME_PERIOD,
-            CONTRACT_V3Deployer.target,
+            CONTRACT_V3Deployer!.target,
             WRAPPED_NATIVE
         ],
     });

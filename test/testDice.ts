@@ -49,7 +49,7 @@ describe("Meme Launchpad", function () {
     let ddosSnapshot: SnapshotRestorer;
     let pumpSnapshot: SnapshotRestorer;
 
-    let tokenId:number;
+    let tokenId: number;
 
     const sponsorWalletAddress: any = "0x6D4De837da016e850ccc51d18A9593D7624B6c77";
     let CONTRACT_WMETIS: IWETH;
@@ -60,7 +60,7 @@ describe("Meme Launchpad", function () {
     let CONTRACT_V3FACTORY: IUniswapV3Factory;
     let CONTRACT_POSITION_MANAGER: INonfungiblePositionManager;
     let quoter: QuoterV3;
-    
+
 
     async function addTokens(target: string, tokens: any[], amounts: BigInt[]) {
         await Promise.all(
@@ -182,7 +182,7 @@ describe("Meme Launchpad", function () {
             // Attempt to send ETH to the contract, which should fail
             await expect(CONTRACT_DICEGAME.purchasePoints(1000, { value: ethers.parseEther("1") })).to.be.reverted;
 
-        }); 
+        });
         it("should revert if the initial token rate is not greater than zero", async function () {
             const deadline = (await time.latest()) + 60;
             await expect(CONTRACT_V3Deployer.createGame(
@@ -1346,7 +1346,7 @@ describe("Meme Launchpad", function () {
             expect(await memeToken.positionManager()).to.equal(POSITION_MANAGER_ADDRESS);
             expect(await memeToken.V3Pool()).to.equal(V3Pool);
             expect(await memeToken.posTokenId()).to.equal(v3PositionId);
-            const zeroForTokenIn = BigInt(memeToken.target.toString()) < BigInt(WMETIS_ADDRESS); 
+            const zeroForTokenIn = BigInt(memeToken.target.toString()) < BigInt(WMETIS_ADDRESS);
             // const pool = await ethers.getContractAt("IUniswapV3Pool", V3Pool);
             // console.log("token0", await pool.token0()); // meme
             // console.log("token1", await pool.token1()); //wmetis
@@ -1364,7 +1364,7 @@ describe("Meme Launchpad", function () {
             let currentTimestamp = await time.latest();
             const PUMP_INTERVAL = await memeToken.pumpInterval();
 
-            await time.increaseTo(BigInt(currentTimestamp) + PUMP_INTERVAL+1n);
+            await time.increaseTo(BigInt(currentTimestamp) + PUMP_INTERVAL + 1n);
 
             expect(await memeToken.isTimeToPump()).to.be.equal(true);
 
@@ -1418,7 +1418,7 @@ describe("Meme Launchpad", function () {
             const wrappedBalance = await CONTRACT_WMETIS.balanceOf(memeToken.target);
             const PUMP_BPS = await memeToken.pumpBPS();
             const pampAmt = (wrappedBalance * PUMP_BPS) / 10000n;
-            const zeroForIn =  BigInt(memeTokenAddress) <  BigInt(WMETIS_ADDRESS);
+            const zeroForIn = BigInt(memeTokenAddress) < BigInt(WMETIS_ADDRESS);
             let [, amountOut] = await quoter.quoteExactInputSingle(!zeroForIn, pool, pampAmt);
 
             // Expect the Pump event to be emitted with the correct values
@@ -1443,8 +1443,8 @@ describe("Meme Launchpad", function () {
                 WMETIS_ADDRESS
             );
             await CONTRACT_SECOND_DICEGAME.waitForDeployment();
-                
-            
+
+
             const deadline = (await time.latest()) + 60;
 
             const initialTokenRate = ethers.parseUnits("100", 18); // 100e18 points per 1e18 WMETIS
@@ -1464,7 +1464,7 @@ describe("Meme Launchpad", function () {
             expect(await CONTRACT_SECOND_DICEGAME.endTime()).to.be.closeTo(blockTimestamp + Number(GAME_PERIOD), 5);
             expect(await CONTRACT_V3Deployer.distributedGames(CONTRACT_SECOND_DICEGAME.target)).to.be.false;
         });
-        
+
     });
 
 

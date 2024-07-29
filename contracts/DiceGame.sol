@@ -22,8 +22,7 @@ contract DiceGame is Ownable {
     uint256 public constant DELIMITER = 1e18;
     uint8 public constant decimals = 18;
     string public constant name = "Points";
-    string public constant symbol = "PTS"; 
-    
+    string public constant symbol = "PTS";
 
     uint256 public immutable gamePeriod;
     address public immutable wrappedNative;
@@ -43,14 +42,23 @@ contract DiceGame is Ownable {
     // Maps an address to their current balance
     mapping(address => uint256) private userBalances;
     // Maps a game ID to its round information
-    mapping(uint256 => GameRound) public gameRounds; /* gameId --> GameRound */
+    mapping(uint256 => GameRound) private gameRounds; /* gameId --> GameRound */
     // Maps an address to their game IDs
     mapping(address => uint256[]) public userGameIds;
 
-    constructor(address _gameRngWalletAddress, uint _gamePeriod, address _V3Deployer, address _wrappedNative)  {
+    constructor(
+        address _gameRngWalletAddress,
+        uint _gamePeriod,
+        address _V3Deployer,
+        address _wrappedNative
+    ) {
         gameRngWallet = _gameRngWalletAddress;
-        if(_gameRngWalletAddress == address(0) || _V3Deployer == address(0) || _wrappedNative == address(0)) revert ZeroValue();
-        if(_gamePeriod < 2 hours || _gamePeriod > 180 days) revert GamePeriod();
+        if (
+            _gameRngWalletAddress == address(0) ||
+            _V3Deployer == address(0) ||
+            _wrappedNative == address(0)
+        ) revert ZeroValue();
+        if (_gamePeriod < 2 hours || _gamePeriod > 180 days) revert GamePeriod();
         gamePeriod = _gamePeriod;
         wrappedNative = _wrappedNative;
         V3Deployer = _V3Deployer;
@@ -68,7 +76,7 @@ contract DiceGame is Ownable {
     error InvaliddiceRollResult(uint256 id);
     error GamePeriod();
     error ZeroValue();
- 
+
     // Modifiers
     modifier shouldGameIsNotOver() {
         require(gameNotOver(), "game over");
@@ -82,7 +90,7 @@ contract DiceGame is Ownable {
 
     /// @notice Receive ETH and forward to `sponsorWallet`.
     receive() external payable {
-        (bool success, ) = gameRngWallet.call{value: msg.value}("");
+        (bool success, ) = gameRngWallet.call{ value: msg.value }("");
         require(success);
     }
 
@@ -92,15 +100,15 @@ contract DiceGame is Ownable {
      * @param _initialTokenRate The initial rate used within the game logic, set at the start and never changed afterward.
      * @custom:modifier onlyOwner Restricts the function's execution to the contract's owner.
      */
-    function startGame(uint _initialTokenRate) external payable onlyOwner  {
-        // Ensure the initial token rate is not already set 
+    function startGame(uint _initialTokenRate) external payable onlyOwner {
+        // Ensure the initial token rate is not already set
         require(initialTokenRate == 0, "o-o");
         // Initialize the initial token rate and calculate the end time based on the current timestamp
         initialTokenRate = _initialTokenRate;
         endTime = block.timestamp + gamePeriod;
         if (msg.value > 0) {
-            (bool success, ) = gameRngWallet.call{value: msg.value}("");
-            require(success); 
+            (bool success, ) = gameRngWallet.call{ value: msg.value }("");
+            require(success);
         }
     }
 
@@ -110,6 +118,13 @@ contract DiceGame is Ownable {
     /// @return The balance of the user
     function balanceOf(address account) public view returns (uint256) {
         return userBalances[account];
+    }
+
+    /// @notice Retrieves info of particular game id
+    /// @param _gameId game number/id
+    /// @return gameInfo GameRound struct
+    function getGameRoundInfo(uint256 _gameId) public view returns (GameRound memory gameInfo) {
+        gameInfo = gameRounds[_gameId];
     }
 
     /// @notice Retrieves the list of game IDs associated with a given user
@@ -166,7 +181,6 @@ contract DiceGame is Ownable {
         return (block.timestamp > _endTime && gameId == lastFulfilledGameId);
     }
 
-   
     struct GameState {
         uint256 gameId;
         uint256 betNumber;
@@ -190,7 +204,6 @@ contract DiceGame is Ownable {
             }
         }
     }
-
 
     /// @notice Allows a user to place a bet on a dice roll(s), record the bet details, and request randomness
     /// @dev Transfers the required ETH to sponsor wallet and creates a new game round with provided bets
@@ -244,10 +257,10 @@ contract DiceGame is Ownable {
 
         // Associate the game ID with the user's address
         userGameIds[msg.sender].push(_gameId);
-        
+
         emit Bet(_gameId, msg.sender, totalBetAmt);
         // Transfer the received Ether to the sponsor's wallet to cover the callback transaction costs
-        (bool success, ) = gameRngWallet.call{value: msg.value}("");
+        (bool success, ) = gameRngWallet.call{ value: msg.value }("");
         require(success);
         return _gameId;
     }
@@ -356,9 +369,9 @@ contract DiceGame is Ownable {
      */
     function purchasePoints(uint256 desiredAmountOut) external payable shouldGameIsNotOver {
         uint256 paymentAmount = calculatePaymentAmount(desiredAmountOut);
-        if(msg.value > 0) {
+        if (msg.value > 0) {
             require(paymentAmount == msg.value, "wrong value");
-            IWETH(wrappedNative).deposit{value: msg.value}();
+            IWETH(wrappedNative).deposit{ value: msg.value }();
         } else {
             wrappedNative.safeTransferFrom(msg.sender, address(this), paymentAmount);
         }
@@ -366,16 +379,18 @@ contract DiceGame is Ownable {
         emit PurchasePoints(msg.sender, paymentAmount);
     }
 
-     /**
+    /**
      * @notice Calculates the payment amount required for purchasing a specific amount of points.
      * @param desiredPointsAmount The desired amount of points.
      * @return paymentAmount The corresponding amount of payment currency needed to purchase the points.
      */
-    function calculatePaymentAmount(uint256 desiredPointsAmount) public view returns (uint256 paymentAmount) {
+    function calculatePaymentAmount(
+        uint256 desiredPointsAmount
+    ) public view returns (uint256 paymentAmount) {
         uint256 _initialTokenRate = initialTokenRate;
         if (_initialTokenRate > 0) {
-            uint256 intermediate = (desiredPointsAmount * DELIMITER); 
-            paymentAmount = intermediate / _initialTokenRate; 
+            uint256 intermediate = (desiredPointsAmount * DELIMITER);
+            paymentAmount = intermediate / _initialTokenRate;
             //round up
             if (paymentAmount == 0 || intermediate % _initialTokenRate > 0) {
                 paymentAmount += 1;
@@ -385,19 +400,25 @@ contract DiceGame is Ownable {
         }
     }
 
-     /**
+    /**
      * @notice Calculates the points amount a user receives for a given payment.
      * @param paymentAmount Amount of the payment currency (e.g., ETH) used to purchase tokens.
      * @return purchaseAmount The resulting amount of tokens that can be purchased with the specified `paymentAmount`.
      */
-    function calculatePointsAmount(uint256 paymentAmount) public view returns (uint256 purchaseAmount) {
+    function calculatePointsAmount(
+        uint256 paymentAmount
+    ) public view returns (uint256 purchaseAmount) {
         if (initialTokenRate > 0) {
             purchaseAmount = (paymentAmount * initialTokenRate) / DELIMITER;
         }
     }
 
-
-    function sendLiquidity() external shouldGameIsOver  onlyOwner returns (uint amount, uint totalPTS){
+    function sendLiquidity()
+        external
+        shouldGameIsOver
+        onlyOwner
+        returns (uint amount, uint totalPTS)
+    {
         amount = wrappedNative.getBalance();
         wrappedNative.safeTransfer(V3Deployer, amount);
         totalPTS = totalSupply;
@@ -413,16 +434,12 @@ contract DiceGame is Ownable {
         _checkZero(amount);
         _burnPoints(msg.sender, amount);
         (bool success, ) = V3Deployer.call(
-            abi.encodeWithSignature(
-                "redeem(address,uint256)",
-                msg.sender,
-                amount)
+            abi.encodeWithSignature("redeem(address,uint256)", msg.sender, amount)
         );
         require(success);
         emit Redeem(msg.sender, amount);
     }
 
-   
     /// @notice Mints points and assigns them to a specified account
     /// @dev Increments `userBalances` and `totalSupply` by the given `amount`
     /// @param to The address of the recipient to whom points are to be minted
