@@ -19,13 +19,21 @@ async function main() {
   let QRNG_OPERATOR_ADDRESS = "";
 
   if (network === "metis") {
-    //https://docs.api3.org/reference/qrng/chains.html#anu
+    //https://docs.api3.org/reference/qrng/chains.html#quintessence
     AirnodeRrpV0Address = "0xC02Ea0f403d5f3D45a4F1d0d817e7A2601346c9E";
     // wagmi
     UNDERLYING_POSITION_MANAGER_ADDRESS = "0xA7E119Cf6c8f5Be29Ca82611752463f0fFcb1B02";
     UNISWAP_V3_FACTORY = "0x8112E18a34b63964388a3B2984037d6a2EFE5B8A";
     WAGMI_ADDRESS = "0xaf20f5f19698f1D19351028cd7103B63D30DE7d7"; //WAGMI
     SEND_VALUE = ethers.parseEther("0.2");
+    QRNG_OPERATOR_ADDRESS = "0x73e68EF04F2eddCeF36f47C2F2a86a4Dd711a9c2";
+  } else if (network === "base") {
+    AirnodeRrpV0Address = "0xa0AD79D995DdeeB18a14eAef56A549A04e3Aa1Bd";// Quintessence
+    // wagmi
+    UNDERLYING_POSITION_MANAGER_ADDRESS = "0x8187808B163E7CBAcCc4D0A9B138AE6196ac1f72";
+    UNISWAP_V3_FACTORY = "0x576A1301B42942537d38FB147895fE83fB418fD4";
+    WAGMI_ADDRESS = "0xaf20f5f19698f1D19351028cd7103B63D30DE7d7"; //WAGMI
+    SEND_VALUE = ethers.parseEther("0.002");
     QRNG_OPERATOR_ADDRESS = "0x73e68EF04F2eddCeF36f47C2F2a86a4Dd711a9c2";
   }
 
