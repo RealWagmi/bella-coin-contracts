@@ -62,7 +62,9 @@ contract V3Deployer is RrpRequesterV0, Ownable {
     }
 
     event Redeem(address token, address user, uint256 amount);
-    event TokenDeployed(address memeToken, address V3Pool, bytes32 key);
+    event SetParams(bytes32[] keys, TokenParams[] params, uint liquidityBPS, address game);
+    event TokenDeployed(address memeToken, address V3Pool, bytes32 key, address game);
+
     event NewGameStarted(address diceGame);
     event SomeoneAlreadyCreatedV3Pool(bytes32 key);
 
@@ -199,6 +201,7 @@ contract V3Deployer is RrpRequesterV0, Ownable {
             }
         }
         if (totalTokensBPS != BP) revert TokenBPS();
+        emit SetParams(_keys, _params, _liquidityBPS, activeGame);
     }
 
     /// @notice Deploys Token and sets up a corresponding V3 pool.
@@ -236,14 +239,14 @@ contract V3Deployer is RrpRequesterV0, Ownable {
                     IUniswapV3Pool(_V3Pool).initialize(sqrtPriceX96);
                     token.V3Pool = IUniswapV3Pool(_V3Pool);
                     _deployToken(token, token_, key, _wrappedNative);
-                    emit TokenDeployed(token_, _V3Pool, key);
+                    emit TokenDeployed(token_, _V3Pool, key, activeGame);
                 } else {
                     emit SomeoneAlreadyCreatedV3Pool(key);
                     (uint160 sqrtPriceX96current, , , , , , ) = IUniswapV3Pool(_V3Pool).slot0();
                     if (sqrtPriceX96current == sqrtPriceX96) {
                         token.V3Pool = IUniswapV3Pool(_V3Pool);
-                        _deployToken(token, token_, key, _wrappedNative);
-                        emit TokenDeployed(token_, _V3Pool, key);
+                        _deployToken(token, token_, key, _wrappedNative); //active game add
+                        emit TokenDeployed(token_, _V3Pool, key, activeGame);
                     }
                 }
                 break;

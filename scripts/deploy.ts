@@ -40,7 +40,18 @@ async function main() {
         QRNG_OPERATOR_ADDRESS = "0x63795e0f9223Ec4BFeF5fBE3dbf9331F1C57cC5c";
         WRAPPED_NATIVE = "0x4200000000000000000000000000000000000006";
         SEND_VALUE = ethers.parseEther("0.002"); // 7 $  half for sponsorWallet and half for gameRngWallet
-        GAME_PERIOD = SEC_IN_DAY * 5n + (SEC_IN_DAY * 3n / 2n); // 5.5 days
+        GAME_PERIOD = SEC_IN_DAY * 5n + (SEC_IN_DAY * 3n / 2n); // 6.5 days
+    }
+
+    if (network === "base") {
+        //https://docs.api3.org/reference/qrng/chains.html#anu
+        AirnodeRrpV0Address = "0xa0AD79D995DdeeB18a14eAef56A549A04e3Aa1Bd";
+        UNDERLYING_POSITION_MANAGER_ADDRESS = "0x8187808B163E7CBAcCc4D0A9B138AE6196ac1f72";
+        UNISWAP_V3_FACTORY = "0x576A1301B42942537d38FB147895fE83fB418fD4";
+        QRNG_OPERATOR_ADDRESS = "0x63795e0f9223Ec4BFeF5fBE3dbf9331F1C57cC5c";
+        WRAPPED_NATIVE = "0x4200000000000000000000000000000000000006";
+        SEND_VALUE = ethers.parseEther("0.002"); // 7 $  half for sponsorWallet and half for gameRngWallet
+        GAME_PERIOD = SEC_IN_DAY * 5n + (SEC_IN_DAY * 3n / 2n); // 6.5 days
     }
 
 
