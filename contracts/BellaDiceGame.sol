@@ -59,7 +59,7 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     // Maps an address to their current balance
     mapping(address => uint256) private userBalances;
     // Maps a game ID to its round information
-    mapping(bytes32 => GameRound) public gameRounds; /* gameId --> GameRound */
+    mapping(bytes32 => GameRound) private gameRounds; /* gameId --> GameRound */
     // Maps an address to their game IDs
     mapping(address => bytes32[]) public userGameIds;
     // Maps an address to the last time they placed a bet
@@ -151,6 +151,13 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
     /// @return The balance of the user
     function balanceOf(address account) public view returns (uint256) {
         return userBalances[account];
+    }
+
+    /// @notice Retrieves info of particular game id
+    /// @param _gameId game number/id
+    /// @return gameInfo GameRound struct
+    function getGameRoundInfo(bytes32 _gameId) public view returns (GameRound memory gameInfo) {
+        gameInfo = gameRounds[_gameId];
     }
 
     /// @notice Retrieves the list of game IDs associated with a given user
