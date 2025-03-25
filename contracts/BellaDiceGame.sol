@@ -282,8 +282,8 @@ contract BellaDiceGame is RrpRequesterV0, Ownable {
         for (uint i; i < numWords; ) {
             // Each bet amount must be greater than zero
             _checkZero(betAmts[i]);
+            totalBetAmt += betAmts[i];
             unchecked {
-                totalBetAmt += betAmts[i];
                 ++i;
             }
         }
